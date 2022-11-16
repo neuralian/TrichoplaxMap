@@ -1,5 +1,6 @@
 using GLMakie
 using Colors
+using Debugger
 
 # global parameters
 worldWide = 1600.0 # microns
@@ -57,7 +58,7 @@ function moveto(trichoplax::Trichoplax, dx::Point2f)
     move(trichoplax, p-trichoplax.location[])
 end
 
-# sample of size n from density(r) defined on (0,rmax)
+# sample of n points p::point2f from density(r) defined on (0,rmax), where r is distance of p from origin
 # minimum distance Δ between sample points
 function radialsample(n::Int64, density::Function,  rmax::Float64, Δ::Float64)
     crowdCount = 0
@@ -80,6 +81,25 @@ function radialsample(n::Int64, density::Function,  rmax::Float64, Δ::Float64)
     return (P, popCount)
 end
 
+# univariate sample from density on [0, rmax] (by rejection)
+function bumpsample(n::Int64, density::Function, rmax::Base.Float64)
+
+    x = Vector{Float64}(undef,n)
+    count = 0
+    while count < n
+        candidate = Float32(rand()*rmax)
+        if rand() < density(candidate)
+            count += 1
+            x[count] = candidate
+        end
+    end
+
+    return x
+end
+
+
+        
+
 
 # add label (coloured points)
 function label(tr::Trichoplax, labelName::String, n::Int64, density::Function, Δ::Float64,
@@ -94,6 +114,7 @@ function label(tr::Trichoplax, labelName::String, n::Int64, density::Function, �
     println(popCount, " of ", n, " points created" )
 end
 
+# radial density function r->bumpdensity(r::Float32, ...)
 # bump is triangle between r and R with max 1 at midpoint, raised to power q
 # q = 1 gives triangle, q>1 concentrates mass near centre, 
 # 0<q<1 spreads mass outward,  q = 0 is uniform on (r,R)
@@ -109,19 +130,27 @@ function bumpdensity(x::Float32, q::Float64, r::Float64, R::Float64)
     end
 end
 
-# clump means have a bump distribution
-# clump particle counts have ?? distribution
-# clumps have 2D gaussian shape 
-function clumpdensity(x::Float32, q::Float64, r::Float64, R::Float64)
-    x0 = (r+R)/2.0
-    h = (R-r)/2.0
-    if (x>r) && (x<=x0) 
-        return ((x-r)/h)^q
-    elseif (x>x0) && (x<R)
-        return ((R-x)/h)^q
-    else
-        return 0.0f0
-    end
+# compute parameters (clumpmean, clumpsize, nclumps) of random-sized randomly scattered clumps
+# a clump is a local bump (radial distribution around some p not at origin)
+# clump means have a radial bump distribution, ΔC is min distance between clumps
+# clump sizes (s) have a univariate bump distribution
+function clumps(x::Float32, tr::Trichoplax, 
+                        nClump::Int64, q::Float64,  r::Float64, R::Float64, ΔC::Float64,
+                        mean_clumpsize::Float64, range_clumpsize::Float64)
+
+    # clump mean locations from bump distribution
+    # nb actual number of clumps (nC) may vary from requested number (nClump) 
+    #    because of crowding
+    (C, nC) = radialsample(nClump, x->bumpdensity(x, q, r, R), tr.radius[], ΔC)
+
+    # clump sizes from bump distribution
+    s = mean_clumpsize-range_clumpsize
+    S = mean_clumpsize+range_clumpsize
+    (sC, dummy) = bumpsample(nC, x->bumpdensity(x, q, s, S), S)
+
+    return (C, sC, nC)
+
+
 end
 
 
@@ -150,12 +179,12 @@ label(trichoplax, "Trox_2", nTrox2_Particles, Trox2density, minSeparation,
      Trox2_particlesize, Trox2_particlecolor)
 
 # trPaxB Hadrys et al. (2005)
-trPaxBdensity = x-> clumpdensity(x, 3.0, 400.0, 480.0)
-minSeparation = 0.1  # minimum separation between points um
-ntrPaxB_Particles = 100 # number of label points
-trPaxB_particlesize = 5.0
-trPaxB_particlecolor = RGBA(8.0, 0.4, 0.8, 1.0)
-label(trichoplax, "trPaxB", ntrPaxB_Particles, trPaxBdensity, minSeparation, 
-       trPaxB_particlesize, trPaxB_particlecolor)
+#trPaxBdensity = x-> clumpdensity(x, 3.0, 400.0, 480.0)
+# minSeparation = 0.1  # minimum separation between points um
+# ntrPaxB_Particles = 100 # number of label points
+# trPaxB_particlesize = 5.0
+# trPaxB_particlecolor = RGBA(8.0, 0.4, 0.8, 1.0)
+# label(trichoplax, "trPaxB", ntrPaxB_Particles, trPaxBdensity, minSeparation, 
+#        trPaxB_particlesize, trPaxB_particlecolor)
 
 display(F)
