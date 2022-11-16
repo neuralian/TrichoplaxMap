@@ -63,27 +63,32 @@ function label(tr::Trichoplax, labelName::String, n::Int64, d::Float64, intensit
 
     dA = π*(d/2.0)^2  # area element
     if Δ<0.0 Δ = d end   # default min spacing
+    crowdCount = 0
+    overCrowd = 25   # will exit if fail to find room to place a label consecutively this many times
 
-    count = 0
+    popCount = 0
     P = Array{Point2f,1}(undef, n)  # array of n points, initially undefined
-    while count < n
+    while popCount < n && crowdCount < overCrowd
         p = Point2f((2.0*rand(2).-1.0).*tr.radius)  # uniform random point in area containing the trichoplax
         if rand()*dA<intensity(distance(p)) # provisional accept based on density
-            if count<1 || !anycloserthan(Δ, p, P[1:count]) 
-                count = count + 1    
-                P[count] = p           # accept
+            if (popCount < 1) || !anycloserthan(Δ, p, P[1:popCount]) 
+                popCount += 1    
+                P[popCount] = p           # accept
+                crowdCount = 0
+            else
+                crowdCount += 1
             end
         end
     end
     trichoplax.nLabels[] = trichoplax.nLabels[] + 1
-    trichoplax.label_handle[trichoplax.nLabels[]] = scatter!(ax,tr.location.+P)
+    trichoplax.label_handle[trichoplax.nLabels[]] = scatter!(ax,tr.location.+P[1:popCount])
     trichoplax.label_name[trichoplax.nLabels[]] = labelName
     return P
 end
 
 
 function uniformBand(r::Float32)
-    if (r>100.) & (r<200.) return 1.0
+    if (r>470.) & (r<490.) return 1.0
     else return 0.0
     end
 end
@@ -92,6 +97,7 @@ F = Figure(resolution = (worldWide*pxl_per_um,worldWide*pxl_per_um))
 ax = Axis(F[1,1], aspect = 1)
 xlims!(0, worldWide)
 ylims!(0, worldWide)
+hidedecorations!(ax)
 
 # construct world
 
@@ -101,7 +107,7 @@ worldMap = zeros(pixelWide, pixelWide)
 # construct and draw Trichoplax
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
 
-P = label(trichoplax, "LABEL", 100, 5.0, uniformBand)
+P = label(trichoplax, "LABEL", 10, 5.0, uniformBand, 700.0)
 
 #tr_plthandle = draw(trichoplax)
 
