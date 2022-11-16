@@ -1,4 +1,5 @@
 using GLMakie
+using Colors
 
 # global parameters
 worldWide = 1600.0 # microns
@@ -12,16 +13,21 @@ pixelWide = Int64(round(worldWide*pxl_per_um))
 # Trichoplax Utilities
 struct Trichoplax
     map::Array{Float64,2}
-    radius::Array{Float64,1} # nb declaring as array makes value mutable as diameter[]
-    location::Array{Point2f,1}  
+    radius::Vector{Float64} # nb declaring as array makes value mutable as diameter[]
+    location::Vector{Point2f}  
     edge_handle::Poly
+    nLabels::Vector{Int64}
+    label_handle::Vector{Scatter}  # handles of scatterplots
+    label_name::Vector{String}
 end
 
 
 function Trichoplax(radius::Float64, location::Point2f)
     plt_handle =  poly!(Circle(location, radius), 
-                  color = :white, strokecolor = :black, strokewidth = 1)
-    Trichoplax(zeros(1,1), [radius], [location], plt_handle)
+                  color = RGBA(.8, .8, .8, .1), strokecolor = RGB(.6, .6, .6), strokewidth = .5)
+    Trichoplax( zeros(1,1), 
+                [radius], [location], plt_handle, 
+                [0], [scatter!(Point2f(NaN, NaN))], [""])
 end
 
 distance(p::Point2f) = sqrt(p[1]^2 + p[2]^2)
@@ -31,26 +37,29 @@ distance(p::Point2f, Q::Vector{Point2f}) = [distance(p,q) for q in Q]
 anycloserthan(Δ::Float64, p::Point2f, Q::Vector{Point2f}) = length(findall(distance(p,Q).<Δ))>0
 
 
-function draw(trichoplax::Trichoplax)
-    #trichoplax.plot_data_handle = 
-    poly!(Circle(trichoplax.location[], trichoplax.radius[]), 
-    color = :white, strokecolor = :black, strokewidth = 1)
+# function draw(trichoplax::Trichoplax)
+#     poly!(Circle(trichoplax.location[], trichoplax.radius[]), 
+#     color = :white, strokecolor = :black, strokewidth = 1)
+# end
+
+function move(trichoplax::Trichoplax, dp::Point2f)
+
+    trichoplax.location[] +=  dp
+    trichoplax.edge_handle[1] = Circle(trichoplax.location[], trichoplax.radius[])  # move outline
+    for i in 1:trichoplax.nLabels[]   # move labels
+        trichoplax.label_handle[i][1] = trichoplax.label_handle[i][1][] .+= dp  
+   end
 end
 
-function moveto(trichoplax::Trichoplax, p::Point2f)
-   trichoplax.location[] = p
-   trichoplax.edge_handle[1] = Circle(p, trichoplax.radius[])  # update plot data
-end
-
-function move(trichoplax::Trichoplax, dx::Point2f)
-    moveto(trichoplax, trichoplax.location[]+dx)
+function moveto(trichoplax::Trichoplax, dx::Point2f)
+    move(trichoplax, p-trichoplax.location[])
 end
 
 
 # sample of n points (type Point2f) from radial intensity function
 # intensity(d,r) is expected number of points in a cell of diameter d um at radius r um
 # with minimum distance Δ between samples (default=1 cell diameter, ie max 1 sample per cell) 
-function radialIntensitySample(tr::Trichoplax, n::Int64, d::Float64, intensity::Function, Δ::Float64=-1.0)
+function label(tr::Trichoplax, labelName::String, n::Int64, d::Float64, intensity::Function, Δ::Float64=-1.0)
 
     dA = π*(d/2.0)^2  # area element
     if Δ<0.0 Δ = d end   # default min spacing
@@ -66,6 +75,9 @@ function radialIntensitySample(tr::Trichoplax, n::Int64, d::Float64, intensity::
             end
         end
     end
+    trichoplax.nLabels[] = trichoplax.nLabels[] + 1
+    trichoplax.label_handle[trichoplax.nLabels[]] = scatter!(ax,tr.location.+P)
+    trichoplax.label_name[trichoplax.nLabels[]] = labelName
     return P
 end
 
@@ -89,7 +101,7 @@ worldMap = zeros(pixelWide, pixelWide)
 # construct and draw Trichoplax
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
 
-P = radialIntensitySample(trichoplax, 1000, 5.0, uniformBand)
+P = label(trichoplax, "LABEL", 100, 5.0, uniformBand)
 
 #tr_plthandle = draw(trichoplax)
 
