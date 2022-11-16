@@ -5,6 +5,7 @@ using Colors
 worldWide = 1600.0 # microns
 pxl_per_um = 0.5      # pixels per micron display
 tr_diameter = 1000.0  # um
+MAXLABELS = 100
 
 # derived parameters
 tr_location = Point2f(worldWide/2.0, worldWide/2.0)
@@ -27,7 +28,8 @@ function Trichoplax(radius::Float64, location::Point2f)
                   color = RGBA(.8, .8, .8, .1), strokecolor = RGB(.6, .6, .6), strokewidth = .5)
     Trichoplax( zeros(1,1), 
                 [radius], [location], plt_handle, 
-                [0], [scatter!(Point2f(NaN, NaN))], [""])
+                [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS) )
+             #   [0], [scatter!(Point2f(NaN, NaN))], [""])
 end
 
 distance(p::Point2f) = sqrt(p[1]^2 + p[2]^2)
@@ -55,22 +57,17 @@ function moveto(trichoplax::Trichoplax, dx::Point2f)
     move(trichoplax, p-trichoplax.location[])
 end
 
-
-# sample of n points (type Point2f) from radial intensity function
-# intensity(d,r) is expected number of points in a cell of diameter d um at radius r um
-# with minimum distance Δ between samples (default=1 cell diameter, ie max 1 sample per cell) 
-function label(tr::Trichoplax, labelName::String, n::Int64, d::Float64, intensity::Function, Δ::Float64=-1.0)
-
-    dA = π*(d/2.0)^2  # area element
-    if Δ<0.0 Δ = d end   # default min spacing
+# sample of size n from density(r) defined on (0,rmax)
+# minimum distance Δ between sample points
+function radialsample(n::Int64, density::Function,  rmax::Float64, Δ::Float64)
     crowdCount = 0
     overCrowd = 25   # will exit if fail to find room to place a label consecutively this many times
 
     popCount = 0
     P = Array{Point2f,1}(undef, n)  # array of n points, initially undefined
-    while popCount < n && crowdCount < overCrowd
-        p = Point2f((2.0*rand(2).-1.0).*tr.radius)  # uniform random point in area containing the trichoplax
-        if rand()*dA<intensity(distance(p)) # provisional accept based on density
+    while (popCount < n) && (crowdCount < overCrowd)
+        p = Point2f((2.0*rand(2).-1.0).*rmax)  # uniform random point in area containing the trichoplax
+        if rand()<density(distance(p)) # provisional accept based on density
             if (popCount < 1) || !anycloserthan(Δ, p, P[1:popCount]) 
                 popCount += 1    
                 P[popCount] = p           # accept
@@ -80,18 +77,54 @@ function label(tr::Trichoplax, labelName::String, n::Int64, d::Float64, intensit
             end
         end
     end
-    trichoplax.nLabels[] = trichoplax.nLabels[] + 1
-    trichoplax.label_handle[trichoplax.nLabels[]] = scatter!(ax,tr.location.+P[1:popCount])
-    trichoplax.label_name[trichoplax.nLabels[]] = labelName
-    return P
+    return (P, popCount)
 end
 
 
-function uniformBand(r::Float32)
-    if (r>470.) & (r<490.) return 1.0
-    else return 0.0
+# add label (coloured points)
+function label(tr::Trichoplax, labelName::String, n::Int64, density::Function, Δ::Float64,
+              size::Float64 = 25.0, color::RGBA=RGBA(.8, .4, .2, 1.))
+
+    (P, popCount) = radialsample(n, density, tr.radius[], Δ)
+    trichoplax.nLabels[] += 1
+    trichoplax.label_handle[trichoplax.nLabels[]] = 
+        scatter!(ax,tr.location.+P[1:popCount], markersize = size, color = color)
+    trichoplax.label_name[trichoplax.nLabels[]] = labelName
+    print("Label: ", labelName, popCount==n ? ". OK: " : ". WARNING: ")
+    println(popCount, " of ", n, " points created" )
+end
+
+# bump is triangle between r and R with max 1 at midpoint, raised to power q
+# q = 1 gives triangle, q>1 concentrates mass near centre, 
+# 0<q<1 spreads mass outward,  q = 0 is uniform on (r,R)
+function bumpdensity(x::Float32, q::Float64, r::Float64, R::Float64)
+    x0 = (r+R)/2.0
+    h = (R-r)/2.0
+    if (x>r) && (x<=x0) 
+        return ((x-r)/h)^q
+    elseif (x>x0) && (x<R)
+        return ((R-x)/h)^q
+    else
+        return 0.0f0
     end
 end
+
+# clump means have a bump distribution
+# clump particle counts have ?? distribution
+# clumps have 2D gaussian shape 
+function clumpdensity(x::Float32, q::Float64, r::Float64, R::Float64)
+    x0 = (r+R)/2.0
+    h = (R-r)/2.0
+    if (x>r) && (x<=x0) 
+        return ((x-r)/h)^q
+    elseif (x>x0) && (x<R)
+        return ((R-x)/h)^q
+    else
+        return 0.0f0
+    end
+end
+
+
 
 F = Figure(resolution = (worldWide*pxl_per_um,worldWide*pxl_per_um))
 ax = Axis(F[1,1], aspect = 1)
@@ -107,8 +140,22 @@ worldMap = zeros(pixelWide, pixelWide)
 # construct and draw Trichoplax
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
 
-P = label(trichoplax, "LABEL", 10, 5.0, uniformBand, 700.0)
+# Trox-2 Jacobs et al. (2004)
+Trox2density = x-> bumpdensity(x, 3.0, 440.0, 500.0)
+minSeparation = 0.1  # minimum separation between points um
+nTrox2_Particles = 10000 # number of label points
+Trox2_particlesize = 1.0
+Trox2_particlecolor = RGBA(1.0, 0.4, 0.4, 1.0)
+label(trichoplax, "Trox_2", nTrox2_Particles, Trox2density, minSeparation, 
+     Trox2_particlesize, Trox2_particlecolor)
 
-#tr_plthandle = draw(trichoplax)
+# trPaxB Hadrys et al. (2005)
+trPaxBdensity = x-> clumpdensity(x, 3.0, 400.0, 480.0)
+minSeparation = 0.1  # minimum separation between points um
+ntrPaxB_Particles = 100 # number of label points
+trPaxB_particlesize = 5.0
+trPaxB_particlecolor = RGBA(8.0, 0.4, 0.8, 1.0)
+label(trichoplax, "trPaxB", ntrPaxB_Particles, trPaxBdensity, minSeparation, 
+       trPaxB_particlesize, trPaxB_particlecolor)
 
 display(F)
