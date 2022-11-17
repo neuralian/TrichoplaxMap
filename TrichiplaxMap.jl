@@ -1,6 +1,6 @@
 using GLMakie
 using Colors
-using Debugger
+using Infiltrator
 
 # global parameters
 worldWide = 1600.0 # microns
@@ -26,7 +26,7 @@ end
 
 function Trichoplax(radius::Float64, location::Point2f)
     plt_handle =  poly!(Circle(location, radius), 
-                  color = RGBA(.8, .8, .8, .1), strokecolor = RGB(.6, .6, .6), strokewidth = .5)
+                  color = RGBA(.6, .6, .6, .5), strokecolor = RGB(.6, .6, .6), strokewidth = .5)
     Trichoplax( zeros(1,1), 
                 [radius], [location], plt_handle, 
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS) )
@@ -38,6 +38,15 @@ distance(p::Point2f, q::Point2f) = distance(p-q)
 distance(p::Point2f, Q::Vector{Point2f}) = [distance(p,q) for q in Q]
 # TRUE if any points in Q are within Δ of p
 anycloserthan(Δ::Float64, p::Point2f, Q::Vector{Point2f}) = length(findall(distance(p,Q).<Δ))>0
+
+function withinanyclump(p::Point2f, C::Vector{Point2f}, S::Vector{Float64})
+    # true if p is within a clump
+    for i in 1:length(C)
+        if distance(p, C[i])<S[i] return true
+        end
+    end
+    return false
+end
 
 
 # function draw(trichoplax::Trichoplax)
@@ -83,6 +92,32 @@ function radialsample(n::Int64, density::Function,  rmax::Float64, Δ::Float64)
     return P[1:popCount]
 end
 
+# sample of n points p::point2f from density(r) defined on (0,rmax), where r is distance of p from origin
+# minimum distance Δ between sample points
+function radialclumpsample(n::Int64, density::Function,  rmax::Float64, S::Vector{Float64})
+    crowdCount = 0
+    overCrowd = 25   # will exit if fail to find room to place a label consecutively this many times
+
+    popCount = 0
+    P = Array{Point2f,1}(undef, n)  # array of n points, initially undefined
+    while (popCount < n) && (crowdCount < overCrowd)
+        p = Point2f((2.0*rand(2).-1.0).*rmax)  # uniform random point in area containing the trichoplax
+        if rand()<density(distance(p)) # provisional accept based on density
+            if (popCount < 1) || !withinanyclump(p, P[1:popCount], 0.75*S[1:popCount]) 
+                popCount += 1    
+                P[popCount] = p           # accept
+                crowdCount = 0
+            else
+                crowdCount += 1
+            end
+        end
+    end
+    print(popCount==n ? "OK: " : "WARNING: ")
+    println(popCount, " of ", n, " points created" )
+    return P[1:popCount]
+end
+
+
 # univariate sample from density on [0, rmax] (by rejection)
 function bumpsample(n::Int64, density::Function, rmax::Base.Float64)
 
@@ -103,27 +138,13 @@ end
         
 # draw label points
 function label(trichoplax::Trichoplax, P::Vector{Point2f}, labelName::String, 
-              size::Float64 = 25.0, color::RGBA=RGBA(.8, .4, .2, 1.))
+              size::Float64 = 25.0, color::RGBA=RGBA(.8, .4, .2, 1.), marker=:circle)
 
     trichoplax.nLabels[] += 1
     trichoplax.label_handle[trichoplax.nLabels[]] = 
         scatter!(ax,trichoplax.location.+P, markersize = size, color = color)
     trichoplax.label_name[trichoplax.nLabels[]] = labelName
 end
-
-
-# # add label (coloured points)
-# function label(tr::Trichoplax, labelName::String, n::Int64, density::Function, Δ::Float64,
-#     size::Float64 = 25.0, color::RGBA=RGBA(.8, .4, .2, 1.))
-
-# (P, popCount) = radialsample(n, density, tr.radius[], Δ)
-# trichoplax.nLabels[] += 1
-# trichoplax.label_handle[trichoplax.nLabels[]] = 
-# scatter!(ax,tr.location.+P[1:popCount], markersize = size, color = color)
-# trichoplax.label_name[trichoplax.nLabels[]] = labelName
-# print("Label: ", labelName, popCount==n ? ". OK: " : ". WARNING: ")
-# println(popCount, " of ", n, " points created" )
-# end
 
 
 # radial density function r->bumpdensity(r::Float32, ...)
@@ -147,18 +168,18 @@ end
 # clump means have a radial bump distribution with shape exponent q 
 # clump sizes have univariate bump distribution with shape exponent qi
 # ΔC is min distance between clumps
-function make_clumps(nClump::Int64, q::Float64,  qi::Float64, r::Float64, R::Float64, ΔC::Float64,
+function make_clumps(nClump::Int64, q::Float64,  qi::Float64, r::Float64, R::Float64, 
                         mean_clumpsize::Float64, range_clumpsize::Float64)
+
+    # clump sizes from bump distribution
+    s = mean_clumpsize/4.0 #-range_clumpsize
+    S = mean_clumpsize+range_clumpsize
+    sC = bumpsample(nClump, x->bumpdensity(x, qi, s, S), S)
 
     # clump mean locations from bump distribution
     # nb actual number of clumps (nC) may vary from requested number (nClump) 
     #    because of crowding
-    C = radialsample(nClump, x->bumpdensity(x, q, r, R), R, ΔC)
-
-    # clump sizes from bump distribution
-    s = mean_clumpsize-range_clumpsize
-    S = mean_clumpsize+range_clumpsize
-    sC = bumpsample(nClump, x->bumpdensity(x, qi, s, S), S)
+    C = radialclumpsample(nClump, x->bumpdensity(x, q, r, R), R, sC)
 
     return (C, sC, qi)
 
@@ -195,7 +216,7 @@ function clumpsample(n::Int64, cmean::Vector{Point{2, Float32}}, s::Vector{Float
     P = Array{Point2f,1}(undef, n)  # array of n points, initially undefined
     while (popCount < n) && (crowdCount < overCrowd)
         p = Point2f((2.0*rand(2).-1.0).*rmax)  # uniform random point in area containing the trichoplax
-        if rand()<clumpdensity(p, cmean, s, q) # provisional accept based on density
+        if distance(p)<rmax && rand()<clumpdensity(p, cmean, s, q) # provisional accept based on density
             if (popCount < 1) || !anycloserthan(Δ, p, P[1:popCount]) 
                 popCount += 1    
                 P[popCount] = p           # accept
@@ -223,36 +244,45 @@ worldMap = zeros(pixelWide, pixelWide)
 
 
 # construct and draw Trichoplax
+scatter!(tr_location, markersize = 20, color = RGB(.1, .4, .6))
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
 
+
 # Trox-2 Jacobs et al. (2004)
-Trox2density = x-> bumpdensity(x, 3.0, 440.0, 500.0)
+Trox2density = x-> bumpdensity(x, 1.5, 425.0, 500.0)
 minSeparation = 0.1  # minimum separation between points um
-nTrox2_Particles = 10000 # number of label points
+nTrox2_Particles = 15000 # number of label points
 Trox2_particle_location = radialsample(nTrox2_Particles, 
                             Trox2density, trichoplax.radius[], minSeparation)
 Trox2_particlesize = 2.0
-Trox2_particlecolor = RGBA(1.0, 0.4, 0.4, 1.0)
+Trox2_particlecolor = RGBA(7.0, 0.4, 0.1, 1.0)
 label(trichoplax, Trox2_particle_location, "Trox_2", Trox2_particlesize, Trox2_particlecolor)
 
 # trPaxB Hadrys et al. (2005)
-trPaxB_nclumps = 50
-trPaxB_clump_distribution_shape = 3.0 # q, shape of clump distribution
-trPaxB_clump_shape = 1.0    # qi, shape of each clump
-trPaxB_r = 400.  # lower bound on clump location
-trPaxB_R = 470.  # upper bound on clump location
-trPaxB_Δ = 16.  # min distance between clump means
-trPaxB_mean_clumpsize = 25.
-trPaxB_range_clumpsize = 25.  # clumpsize is a bump reaching this far above and below mean 
+trPaxB_nclumps = 36
+trPaxB_clump_distribution_shape =2.0 # q, shape of clump distribution
+trPaxB_clump_shape = 1.5  # qi, shape of each clump
+trPaxB_r = 410.  # lower bound on clump location
+trPaxB_R = 450.  # upper bound on clump location
+#trPaxB_Δ = 28.  # min distance between clump means
+trPaxB_mean_clumpsize = 50.
+trPaxB_range_clumpsize = 40.  # clumpsize is a bump reaching this far above and below mean 
 trPaxB_clump = make_clumps(trPaxB_nclumps, trPaxB_clump_distribution_shape, trPaxB_clump_shape, 
-                trPaxB_r, trPaxB_R, trPaxB_Δ, trPaxB_mean_clumpsize, trPaxB_range_clumpsize)
+                trPaxB_r, trPaxB_R, trPaxB_mean_clumpsize, trPaxB_range_clumpsize)
 trPaxBdensity = x-> clumpdensity(x, 3.0, 400.0, 480.0)
 minSeparation = 0.1  # minimum separation between points um
-ntrPaxB_Particles = 5000 # number of label points
+ntrPaxB_Particles = 20000 # number of label points
 TrPaxB_particle_location = clumpsample(ntrPaxB_Particles, trPaxB_clump[1], trPaxB_clump[2], 
                     trPaxB_clump[3], trichoplax.radius[], minSeparation)
-trPaxB_particlesize = 1.0
-trPaxB_particlecolor = RGBA(8.0, 0.4, 0.8, 1.0)
+trPaxB_particlesize = 0.25
+trPaxB_particlecolor = RGBA(0.7, 0.1, 0.65, 1.0)
 label(trichoplax, TrPaxB_particle_location, "trPaxB", trPaxB_particlesize, trPaxB_particlecolor)
+
+
+crystal_size = 12.0
+crystal_colour = RGBA(.8, .8, 1.0, 1.0)
+crystal_shape = :diamond
+label(trichoplax, trPaxB_clump[1], "Crystals", crystal_size, crystal_colour, crystal_shape)
+
 
 display(F)
