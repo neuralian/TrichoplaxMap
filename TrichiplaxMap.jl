@@ -1,12 +1,17 @@
 using GLMakie
 using Colors
+using Random
 using Infiltrator
+
+Random.seed!(121213)
 
 # global parameters
 worldWide = 1600.0 # microns
 pxl_per_um = 0.5      # pixels per micron display
 tr_diameter = 1000.0  # um
-MAXLABELS = 100
+MAXLABELS = 20
+MAXCELLTYPES = 20
+MAXCELLS = 1000   # maximum number of cells of any type
 
 # derived parameters
 tr_location = Point2f(worldWide/2.0, worldWide/2.0)
@@ -21,6 +26,10 @@ struct Trichoplax
     nLabels::Vector{Int64}
     label_handle::Vector{Scatter}  # handles of scatterplots
     label_name::Vector{String}
+    nCelltypes::Vector{Int64}   # number of cell types
+    nCells::Vector{Int64}       # number of cells of each type
+    cell_handle::Vector{Vector{Poly}}  # cell_handle[i][j] is handle of jth cell of type i 
+    celltype_name::Vector{String}
 end
 
 
@@ -29,7 +38,11 @@ function Trichoplax(radius::Float64, location::Point2f)
                   color = RGBA(.6, .6, .6, .5), strokecolor = RGB(.6, .6, .6), strokewidth = .5)
     Trichoplax( zeros(1,1), 
                 [radius], [location], plt_handle, 
-                [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS) )
+                [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
+                [0], Vector{Int64}(undef, MAXCELLTYPES),
+                [ Vector{Poly}(undef,MAXCELLS) for _ = 1:MAXCELLTYPES], 
+                Vector{String}(undef, MAXCELLTYPES) 
+            )
              #   [0], [scatter!(Point2f(NaN, NaN))], [""])
 end
 
@@ -134,6 +147,19 @@ function bumpsample(n::Int64, density::Function, rmax::Base.Float64)
     return x
 end
 
+function rotate(P::Vector{Point2f}, Θ::Float64)
+    # rotate points around origin
+
+    Q = Vector{Point2f}(undef,length(P))
+    for i in 1:length(P)
+        Q[i] = Point2f(P[i][1]*cos(Θ) - P[i][2]*sin(Θ), P[i][1]*sin(Θ)+P[i][2]*cos(Θ) )
+    end
+
+    return Q
+end
+
+
+
 
         
 # draw label points
@@ -146,6 +172,22 @@ function label(trichoplax::Trichoplax, P::Vector{Point2f}, labelName::String,
     trichoplax.label_name[trichoplax.nLabels[]] = labelName
 end
 
+
+# draw cells
+# orientation counter-clockwise
+function cells(trichoplax::Trichoplax, 
+            position::Vector{Point2f}, orientation::Vector{Float64}, shape::Vector{Point2f},
+            celltypename::String, size::Float64, color::RGBA, edgecolor::RGBA)
+
+    trichoplax.nCelltypes[] += 1
+    trichoplax.celltype_name[ trichoplax.nCelltypes[]] = celltypename
+
+    for j in 1:length(P)
+        trichoplax.cell_handle[trichoplax.nCelltypes[]] = 
+            poly!(trichoplax.location.+position[j].+rotate(Float32(size)*shape, orientation[j]))
+    end
+
+end
 
 # radial density function r->bumpdensity(r::Float32, ...)
 # bump is triangle between r and R with max 1 at midpoint, raised to power q
@@ -244,7 +286,7 @@ worldMap = zeros(pixelWide, pixelWide)
 
 
 # construct and draw Trichoplax
-scatter!(tr_location, markersize = 20, color = RGB(.1, .4, .6))
+# scatter!(tr_location, markersize = 20, color = RGB(.1, .4, .6))
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
 
 
@@ -280,8 +322,8 @@ label(trichoplax, TrPaxB_particle_location, "trPaxB", trPaxB_particlesize, trPax
 
 
 crystal_size = 12.0
-crystal_colour = RGBA(.8, .8, 1.0, 1.0)
-crystal_shape = :diamond
+crystal_colour = RGBA(.85, .9, 1.0, 1.0)
+crystal_shape = :circle
 label(trichoplax, trPaxB_clump[1], "Crystals", crystal_size, crystal_colour, crystal_shape)
 
 
