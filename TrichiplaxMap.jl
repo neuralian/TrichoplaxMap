@@ -1,6 +1,6 @@
 using GLMakie
 using Colors
-using Random
+using Random, Distributions
 using Infiltrator
 
 Random.seed!(121213)
@@ -40,7 +40,7 @@ function Trichoplax(radius::Float64, location::Point2f)
                 [radius], [location], plt_handle, 
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
                 [0], Vector{Int64}(undef, MAXCELLTYPES),
-                [ Vector{Poly}(undef,MAXCELLS) for _ = 1:MAXCELLTYPES], 
+                [ Vector{Poly{Tuple{Vector{Point{2, Float32}}}}}(undef,MAXCELLS) for _ = 1:MAXCELLTYPES], 
                 Vector{String}(undef, MAXCELLTYPES) 
             )
              #   [0], [scatter!(Point2f(NaN, NaN))], [""])
@@ -177,16 +177,16 @@ end
 # orientation counter-clockwise
 function cells(trichoplax::Trichoplax, 
             position::Vector{Point2f}, orientation::Vector{Float64}, shape::Vector{Point2f},
-            celltypename::String, size::Float64, color::RGBA, edgecolor::RGBA)
+            celltypename::String, size::Float32, color::RGBA, edgecolor::RGBA, edgewidth::Float64=1.0)
 
     trichoplax.nCelltypes[] += 1
-    trichoplax.celltype_name[ trichoplax.nCelltypes[]] = celltypename
+    trichoplax.celltype_name[trichoplax.nCelltypes[]] = celltypename
 
-    for j in 1:length(P)
-        trichoplax.cell_handle[trichoplax.nCelltypes[]] = 
-            poly!(trichoplax.location.+position[j].+rotate(Float32(size)*shape, orientation[j]))
+    for j in 1:length(position)
+        trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
+            poly!(trichoplax.location.+position[j].+rotate(size*shape, orientation[j]),
+            color = color, strokecolor = edgecolor, strokewidth = edgewidth)
     end
-
 end
 
 # radial density function r->bumpdensity(r::Float32, ...)
@@ -273,6 +273,13 @@ function clumpsample(n::Int64, cmean::Vector{Point{2, Float32}}, s::Vector{Float
 
 end
 
+# cell shapes
+ # crystal cell = trapezoid with origin at centre, "line of sight" axis +x 
+crystal_cell_shape =    [Point2f(-1., 0.8), Point2f(1., 1.25), Point2f(1., -1.25), Point2f(-1., -0.8)]   # trapezoid with origin at centre, "line of sight" axis +x 
+  
+
+
+
 
 F = Figure(resolution = (worldWide*pxl_per_um,worldWide*pxl_per_um))
 ax = Axis(F[1,1], aspect = 1)
@@ -320,11 +327,16 @@ trPaxB_particlesize = 0.25
 trPaxB_particlecolor = RGBA(0.7, 0.1, 0.65, 1.0)
 label(trichoplax, TrPaxB_particle_location, "trPaxB", trPaxB_particlesize, trPaxB_particlecolor)
 
-
+# Crystal cells
+xtal_wobble = rand(Normal(0.0, π/12.), length(trPaxB_clump[1]))
 crystal_size = 12.0
 crystal_colour = RGBA(.85, .9, 1.0, 1.0)
 crystal_shape = :circle
-label(trichoplax, trPaxB_clump[1], "Crystals", crystal_size, crystal_colour, crystal_shape)
+#label(trichoplax, trPaxB_clump[1], "Crystals", crystal_size, crystal_colour, crystal_shape)
+
+cells(trichoplax, trPaxB_clump[1], 
+    Float64.([ -atan(trPaxB_clump[1][j]...) for j in 1:length(trPaxB_clump[1])].+π/2.0+xtal_wobble), 
+    crystal_cell_shape, "test", 6.f0, RGBA(.85, 0.9, 1.0, 1.), RGBA(0., 0., 0., 1.), 0.5)
 
 
 display(F)
