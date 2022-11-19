@@ -148,7 +148,7 @@ function bumpsample(n::Int64, density::Function, rmax::Base.Float64)
     return x
 end
 
-function rotate(P::Vector{Point2f}, Θ::Float64)
+function rotate(P::Vector{Point2f}, Θ)
     # rotate points around origin
 
     Q = Vector{Point2f}(undef,length(P))
@@ -189,6 +189,8 @@ function cells(trichoplax::Trichoplax,
             color = color, strokecolor = edgecolor, strokewidth = edgewidth)
     end
 end
+
+
 
 # radial density function r->bumpdensity(r::Float32, ...)
 # bump is triangle between r and R with max 1 at midpoint, raised to power q
@@ -339,10 +341,28 @@ function crystals(trichoplax::Trichoplax, location::Vector{Point2f})
         xtal_shape, "crystals", crystal_size, crystal_colour, outline_colour, outline_width)
 end
 
-function glandcellshape(height::Float64=1.0, basalwidth::Float64=0.4, apicalwidth::Float64=0.30,
+function ampulla_shape(height::Float64=1.0, basalwidth::Float64=0.4, apicalwidth::Float64=0.30,
                     neckheight::Float64=0.20, necklength::Float64=0.30, neckwidth::Float64=0.20, 
                     chamfer::Float64 = 0.05)
-    
+    # base shape symmetric around vertical axis, apical face up, origin at center of apical face
+    # vertices listed clockwise from top right
+    #        
+    #            16--1
+    #            /    \
+    #           15     2
+    #            |     |
+    #           14     3
+    #            \    /
+    #            13   4
+    #            |   |
+    #           12    5  
+    #           /      \
+    #          11       6
+    #           |       |
+    #          10       7
+    #           \      /
+    #           9-----8
+
     [
         Point2f(apicalwidth/2.0-chamfer, 0.0), Point2f(apicalwidth/2.0, -chamfer),
         Point2f(apicalwidth/2.0, -neckheight+chamfer/2.0), 
@@ -365,9 +385,11 @@ function ampullae(trichoplax::Trichoplax, n::Int64)
 
 
     # ampulla cells are default gland cell shape
-    ampl_size = 5.0f0
-    ampl_shape = ampl_size*glandcellshape()  
+    ampl_size = 16.0f0
+    ampl_shape = ampulla_shape()  
     spacing =  10.0
+    lateral_jitter = .1  # lateral shape jitter, sd as proportion of ampl_size
+    long_jitter = .35     # length jitter, ... 
 
     ampl_colour = RGBA(.25, .8, .25, 1.0)
     outline_colour = RGBA(0., 0., 0., 1.0)
@@ -390,11 +412,32 @@ function ampullae(trichoplax::Trichoplax, n::Int64)
         end
     end
 
-    cells(trichoplax, location[1:count], 
-        Float64.([ -atan(location[j]...) for j in 1:count]), 
-        ampl_shape, "ampullae", ampl_size, ampl_colour, outline_colour, outline_width)
+    trichoplax.nCelltypes[] += 1
+    trichoplax.celltype_name[trichoplax.nCelltypes[]] = "ampulla"
+
+    for j in 1:length(location)
+
+        # jitter: apical face (1st 2 layers) fixed, 6 deeper layers have random jitter
+        # that scales with distance from apical face
+        Ljit = rand(truncated(Normal(0.0, lateral_jitter*ampl_size), -lateral_jitter*ampl_size, lateral_jitter*ampl_size), 6).*(1:6)./6.0
+        Hjit = rand(truncated(Normal(0.0, long_jitter*ampl_size), -long_jitter*ampl_size, long_jitter*ampl_size), 6).*(1:6)./6.0
+        shape = ampl_size*ampl_shape
+       # @infiltrate
+        for k in 1:6
+            shape[k+2] += Point2f(Ljit[k], Hjit[k])
+            shape[15-k] += Point2f(Ljit[k], Hjit[k])
+        end
+
+       # @infiltrate
+    trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
+        poly!(trichoplax.location.+location[j].+rotate(shape, -atan(location[j]...)),
+        color = ampl_colour, strokecolor = outline_colour, strokewidth = outline_width)
+    end
+
 
 end
+
+
 
 F = Figure(resolution = (worldWide*pxl_per_um,worldWide*pxl_per_um))
 ax = Axis(F[1,1], aspect = 1)
