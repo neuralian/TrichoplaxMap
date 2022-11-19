@@ -50,7 +50,8 @@ distance(p::Point2f) = sqrt(p[1]^2 + p[2]^2)
 distance(p::Point2f, q::Point2f) = distance(p-q)
 distance(p::Point2f, Q::Vector{Point2f}) = [distance(p,q) for q in Q]
 # TRUE if any points in Q are within Δ of p
-anycloserthan(Δ::Float64, p::Point2f, Q::Vector{Point2f}) = length(findall(distance(p,Q).<Δ))>0
+anycloserthan(Δ::Float64, p::Point2f, Q::Vector{Point2f}) = 
+               length(Q)>0 ? length(findall(distance(p,Q).<Δ))>0 : false
 
 function withinanyclump(p::Point2f, C::Vector{Point2f}, S::Vector{Float64})
     # true if p is within a clump
@@ -281,6 +282,120 @@ crystal_cell_shape =    [Point2f(-1., 0.8), Point2f(1., 1.25), Point2f(1., -1.25
 
 
 
+
+
+function Trox2()
+    # Trox-2 Jacobs et al. (2004)
+    Trox2density = x-> bumpdensity(x, 1.5, 425.0, 500.0)
+    minSeparation = 0.1  # minimum separation between points um
+    nTrox2_Particles = 15000 # number of label points
+    Trox2_particle_location = radialsample(nTrox2_Particles, 
+                            Trox2density, trichoplax.radius[], minSeparation)
+    Trox2_particlesize = 2.0
+    Trox2_particlecolor = RGBA(7.0, 0.4, 0.1, 1.0)
+    label(trichoplax, Trox2_particle_location, "Trox_2", Trox2_particlesize, Trox2_particlecolor)
+end
+
+function PaxB()
+    # trPaxB Hadrys et al. (2005)
+    # returns clump means
+    trPaxB_nclumps = 36
+    trPaxB_clump_distribution_shape =2.0 # q, shape of clump distribution
+    trPaxB_clump_shape = 1.5  # qi, shape of each clump
+    trPaxB_r = 410.  # lower bound on clump location
+    trPaxB_R = 450.  # upper bound on clump location
+    #trPaxB_Δ = 28.  # min distance between clump means
+    trPaxB_mean_clumpsize = 50.
+    trPaxB_range_clumpsize = 40.  # clumpsize is a bump reaching this far above and below mean 
+    trPaxB_clump = make_clumps(trPaxB_nclumps, trPaxB_clump_distribution_shape, trPaxB_clump_shape, 
+                    trPaxB_r, trPaxB_R, trPaxB_mean_clumpsize, trPaxB_range_clumpsize)
+    #trPaxBdensity = x-> clumpdensity(x, 3.0, 400.0, 480.0)
+    minSeparation = 0.1  # minimum separation between points um
+    ntrPaxB_Particles = 20000 # number of label points
+    TrPaxB_particle_location = clumpsample(ntrPaxB_Particles, trPaxB_clump[1], trPaxB_clump[2], 
+                        trPaxB_clump[3], trichoplax.radius[], minSeparation)
+    trPaxB_particlesize = 0.25
+    trPaxB_particlecolor = RGBA(0.7, 0.1, 0.65, 1.0)
+    label(trichoplax, TrPaxB_particle_location, "trPaxB", trPaxB_particlesize, trPaxB_particlecolor)
+
+    return trPaxB_clump[1]
+end
+
+ #[Point2f(-1., 0.8), Point2f(1., 1.25), Point2f(1., -1.25), Point2f(-1., -0.8)] 
+function crystals(trichoplax::Trichoplax, location::Vector{Point2f})
+    # Crystal cells
+    # trapezoid with origin at centre, "line of sight" axis +x 
+    xtal_shape = [ Point2f(0.8, -1.0), Point2f(1.25, 1.), Point2f(-1.25, 1.), Point2f(-.8, -1.) ]   
+    xtal_wobbleamount = π/12.
+    xtal_wobble = rand(Normal(0.0, xtal_wobbleamount), length(location))
+    crystal_size = 4.8f0
+    crystal_colour = RGBA(.85, 0.9, 1.0, 1.)
+    outline_colour = RGBA(0.25, 0.25, 1.0, 1.0)
+    outline_width = 1.
+    #label(trichoplax, trPaxB_clump[1], "Crystals", crystal_size, crystal_colour, crystal_shape)
+
+    cells(trichoplax, location,
+        Float64.([ -atan(location[j]...) for j in 1:length(location)].+xtal_wobble), 
+        xtal_shape, "crystals", crystal_size, crystal_colour, outline_colour, outline_width)
+end
+
+function glandcellshape(height::Float64=1.0, basalwidth::Float64=0.4, apicalwidth::Float64=0.30,
+                    neckheight::Float64=0.20, necklength::Float64=0.30, neckwidth::Float64=0.20, 
+                    chamfer::Float64 = 0.05)
+    
+    [
+        Point2f(apicalwidth/2.0-chamfer, 0.0), Point2f(apicalwidth/2.0, -chamfer),
+        Point2f(apicalwidth/2.0, -neckheight+chamfer/2.0), 
+        Point2f(neckwidth/2.0, -neckheight-chamfer/2.0),
+        Point2f(neckwidth/2.0, -neckheight-necklength+chamfer/2.0), 
+        Point2f(basalwidth/2.0-chamfer, -neckheight-necklength-chamfer/2.0),
+        Point2f(basalwidth/2.0, -height+chamfer), 
+        Point2f(basalwidth/2.0-chamfer, -height),
+        Point2f(-basalwidth/2.0+chamfer, -height),
+        Point2f(-basalwidth/2.0, -height+chamfer),   
+        Point2f(-basalwidth/2.0+chamfer, -neckheight-necklength-chamfer/2.0),  
+        Point2f(-neckwidth/2.0, -neckheight-necklength+chamfer/2.0),                     
+        Point2f(-neckwidth/2.0, -neckheight-chamfer/2.0),
+        Point2f(-apicalwidth/2.0, -neckheight+chamfer/2.0),       
+        Point2f(-apicalwidth/2.0, -chamfer), Point2f(-apicalwidth/2.0+chamfer, 0.0)
+    ]
+end
+
+function ampullae(trichoplax::Trichoplax, n::Int64)
+
+
+    # ampulla cells are default gland cell shape
+    ampl_size = 5.0f0
+    ampl_shape = ampl_size*glandcellshape()  
+    spacing =  10.0
+
+    ampl_colour = RGBA(.25, .8, .25, 1.0)
+    outline_colour = RGBA(0., 0., 0., 1.0)
+    outline_width = 0.25
+
+    # n random locations around periphery, with at least spacing between, 
+    # give up if crowded consecutive attempts fail to find a spot
+    count = 0
+    crowded = 25
+    crowding = 0
+    location = Vector{Point2f}(undef,n)
+    while count<n && crowding<crowded
+        Θ = 2π*rand()
+        location[count+1] = trichoplax.radius[]*Point2f(cos(Θ), sin(Θ))
+        if !anycloserthan(spacing, location[count+1], location[1:count])
+            count += 1
+            crowding = 0
+        else
+            crowding += 1
+        end
+    end
+
+    cells(trichoplax, location[1:count], 
+        Float64.([ -atan(location[j]...) for j in 1:count]), 
+        ampl_shape, "ampullae", ampl_size, ampl_colour, outline_colour, outline_width)
+
+end
+
 F = Figure(resolution = (worldWide*pxl_per_um,worldWide*pxl_per_um))
 ax = Axis(F[1,1], aspect = 1)
 xlims!(0, worldWide)
@@ -293,50 +408,14 @@ worldMap = zeros(pixelWide, pixelWide)
 
 
 # construct and draw Trichoplax
-# scatter!(tr_location, markersize = 20, color = RGB(.1, .4, .6))
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
+Trox2()
+PaxB_clumpmean = PaxB()
+# crystal cells at PaxB clump means
+crystals(trichoplax, PaxB_clumpmean)
 
-
-# Trox-2 Jacobs et al. (2004)
-Trox2density = x-> bumpdensity(x, 1.5, 425.0, 500.0)
-minSeparation = 0.1  # minimum separation between points um
-nTrox2_Particles = 15000 # number of label points
-Trox2_particle_location = radialsample(nTrox2_Particles, 
-                            Trox2density, trichoplax.radius[], minSeparation)
-Trox2_particlesize = 2.0
-Trox2_particlecolor = RGBA(7.0, 0.4, 0.1, 1.0)
-label(trichoplax, Trox2_particle_location, "Trox_2", Trox2_particlesize, Trox2_particlecolor)
-
-# trPaxB Hadrys et al. (2005)
-trPaxB_nclumps = 36
-trPaxB_clump_distribution_shape =2.0 # q, shape of clump distribution
-trPaxB_clump_shape = 1.5  # qi, shape of each clump
-trPaxB_r = 410.  # lower bound on clump location
-trPaxB_R = 450.  # upper bound on clump location
-#trPaxB_Δ = 28.  # min distance between clump means
-trPaxB_mean_clumpsize = 50.
-trPaxB_range_clumpsize = 40.  # clumpsize is a bump reaching this far above and below mean 
-trPaxB_clump = make_clumps(trPaxB_nclumps, trPaxB_clump_distribution_shape, trPaxB_clump_shape, 
-                trPaxB_r, trPaxB_R, trPaxB_mean_clumpsize, trPaxB_range_clumpsize)
-trPaxBdensity = x-> clumpdensity(x, 3.0, 400.0, 480.0)
-minSeparation = 0.1  # minimum separation between points um
-ntrPaxB_Particles = 20000 # number of label points
-TrPaxB_particle_location = clumpsample(ntrPaxB_Particles, trPaxB_clump[1], trPaxB_clump[2], 
-                    trPaxB_clump[3], trichoplax.radius[], minSeparation)
-trPaxB_particlesize = 0.25
-trPaxB_particlecolor = RGBA(0.7, 0.1, 0.65, 1.0)
-label(trichoplax, TrPaxB_particle_location, "trPaxB", trPaxB_particlesize, trPaxB_particlecolor)
-
-# Crystal cells
-xtal_wobble = rand(Normal(0.0, π/12.), length(trPaxB_clump[1]))
-crystal_size = 12.0
-crystal_colour = RGBA(.85, .9, 1.0, 1.0)
-crystal_shape = :circle
-#label(trichoplax, trPaxB_clump[1], "Crystals", crystal_size, crystal_colour, crystal_shape)
-
-cells(trichoplax, trPaxB_clump[1], 
-    Float64.([ -atan(trPaxB_clump[1][j]...) for j in 1:length(trPaxB_clump[1])].+π/2.0+xtal_wobble), 
-    crystal_cell_shape, "test", 6.f0, RGBA(.85, 0.9, 1.0, 1.), RGBA(0., 0., 0., 1.), 0.5)
-
+ampullae(trichoplax, 128)
 
 display(F)
+
+
