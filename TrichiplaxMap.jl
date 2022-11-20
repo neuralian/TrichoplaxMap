@@ -37,7 +37,7 @@ end
 
 function Trichoplax(radius::Float64, location::Point2f)
     plt_handle =  poly!(Circle(location, radius), 
-                  color = RGBA(.6, .6, .6, .5), strokecolor = RGB(.6, .6, .6), strokewidth = .5)
+                  color = RGBA(.8, .8, .6, .5), strokecolor = RGB(.6, .6, .6), strokewidth = .25)
     Trichoplax( zeros(1,1), 
                 [radius], [location], plt_handle, 
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
@@ -392,28 +392,14 @@ function Trox2()
     Trox2_particle_location = radialsample(nTrox2_Particles, 
                             Trox2density, trichoplax.radius[], minSeparation)
     Trox2_particlesize = 2.0
-    Trox2_particlecolor = RGBA(0.95, 0.75, 0.2, 1.0)
+    Trox2_particlecolor = RGBA(0.95, 0.8, 0.25, 1.0)
     label(trichoplax, Trox2_particle_location, "Trox_2", Trox2_particlesize, Trox2_particlecolor)
 end
 
-# function TrDlx()
-#     #  Monteiro et al. (2006)
-#    
-#     TrDlxdensity = x-> bumpdensity(x, -.8, 425.0, 500.0)
-#     minSeparation = 0.1  # minimum separation between points um
-#     nTrDlx_Particles = 10000 # number of label points
-#     TrDlx_particle_location = radialsample(nTrDlx_Particles, 
-#                             TrDlxdensity, trichoplax.radius[], minSeparation)
-#     TrDlx_particlesize = 2.0
-#     TrDlx_particlecolor = RGBA(1.0, 1.0, 0.0, 1.0)
-#     label(trichoplax, TrDlx_particle_location, "TrDlx", TrDlx_particlesize, TrDlx_particlecolor)
-# end
 
+function get_PaxB_clumps()
+        # returns clump means
 
-
-function PaxB()
-    # trPaxB Hadrys et al. (2005)
-    # returns clump means
     trPaxB_nclumps = 36
     trPaxB_clump_distribution_shape =2.0 # q, shape of clump distribution
     trPaxB_clump_shape = 1.5  # qi, shape of each clump
@@ -424,16 +410,32 @@ function PaxB()
     trPaxB_range_clumpsize = 40.  # clumpsize is a bump reaching this far above and below mean 
     trPaxB_clump = make_clumps(trPaxB_nclumps, trPaxB_clump_distribution_shape, trPaxB_clump_shape, 
                     trPaxB_r, trPaxB_R, trPaxB_mean_clumpsize, trPaxB_range_clumpsize)
+    return trPaxB_clump
+end
+
+
+function PaxB(clump::Tuple{Vector{Point{2, Float32}}, Vector{Float64}, Float64})
+    # trPaxB Hadrys et al. (2005)
+    # returns clump means
+    # trPaxB_nclumps = 36
+    # trPaxB_clump_distribution_shape =2.0 # q, shape of clump distribution
+    # trPaxB_clump_shape = 1.5  # qi, shape of each clump
+    # trPaxB_r = 410.  # lower bound on clump location
+    # trPaxB_R = 450.  # upper bound on clump location
+    # #trPaxB_Δ = 28.  # min distance between clump means
+    # trPaxB_mean_clumpsize = 50.
+    # trPaxB_range_clumpsize = 40.  # clumpsize is a bump reaching this far above and below mean 
+    # trPaxB_clump = make_clumps(trPaxB_nclumps, trPaxB_clump_distribution_shape, trPaxB_clump_shape, 
+    #                 trPaxB_r, trPaxB_R, trPaxB_mean_clumpsize, trPaxB_range_clumpsize)
     #trPaxBdensity = x-> clumpdensity(x, 3.0, 400.0, 480.0)
     minSeparation = 0.1  # minimum separation between points um
     ntrPaxB_Particles = 20000 # number of label points
-    TrPaxB_particle_location = clumpsample(ntrPaxB_Particles, trPaxB_clump[1], trPaxB_clump[2], 
-                        trPaxB_clump[3], trichoplax.radius[], minSeparation)
+    TrPaxB_particle_location = clumpsample(ntrPaxB_Particles, clump[1], clump[2], 
+                        clump[3], trichoplax.radius[], minSeparation)
     trPaxB_particlesize = 0.25
     trPaxB_particlecolor = RGBA(0.7, 0.1, 0.65, 1.0)
     label(trichoplax, TrPaxB_particle_location, "trPaxB", trPaxB_particlesize, trPaxB_particlecolor)
 
-    return trPaxB_clump[1]
 end
 
 
@@ -445,7 +447,7 @@ function chordinLike()
     TrChrd_particle_location = radialsample(nTrChrd_Particles, 
                             TrChrd_density, trichoplax.radius[], minSeparation)
     TrChrd_particlesize = 2.0
-    TrChrd_particlecolor = RGBA(1.0, 0.0, 0.0, 1.0)
+    TrChrd_particlecolor = RGBA(.75, 0.25, 0.0, 1.0)
     label(trichoplax, TrChrd_particle_location, "TrChrd", TrChrd_particlesize, TrChrd_particlecolor)
 
 end
@@ -458,7 +460,7 @@ function bmp()
     Trbmp_particle_location = radialsample(nTrbmp_Particles, 
                             Trbmp_density, trichoplax.radius[], minSeparation)
     Trbmp_particlesize = 2.0
-    Trbmp_particlecolor = RGBA(0.85, 0.63, 0.0, 1.0)
+    Trbmp_particlecolor = RGBA(0.85, 0.55, 0.0, 1.0)
     label(trichoplax, Trbmp_particle_location, "TrBmp", Trbmp_particlesize, Trbmp_particlecolor)
 end
 
@@ -663,6 +665,24 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
  
  end
 
+ function bacteria(nClumps::Int64, nPerClump::Int64, clumpSd::Float64)
+    # uniformly scattered clumps, Poisson count per clump, Gaussian scattered
+
+    clumpCenter = worldWide*rand(Point2f, nClumps)
+    clumpSize = rand(Poisson(nPerClump), nClumps)
+    @infiltrate
+    for clump in 1:nClumps
+        for bacterium in 1:clumpSize[clump]
+            dp = Point2f(rand(Normal(0.0, clumpSd),2))
+            scatter!(clumpCenter[clump].+dp, markersize = 5.0, color = :red)
+        end
+    end
+
+
+
+ end
+
+
 
 
 F = Figure(resolution = (worldWide*pxl_per_um,worldWide*pxl_per_um))
@@ -677,25 +697,32 @@ worldMap = zeros(pixelWide, pixelWide)
 
 # construct and draw Trichoplax
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
-Trox2()
-PaxB_clumpmean = PaxB()
 
-chordinLike()
-bmp()
+PaxB_clump = get_PaxB_clumps()  
 
+showTFs = false
+if showTFs
+    PaxB(PaxB_clump)
+    Trox2()
+    chordinLike()
+    bmp()
+end
 
-# crystal cells at PaxB clump means
-crystals(trichoplax, PaxB_clumpmean)
+showCells = true
+if showCells
+    # crystal cells at PaxB clump means
+    crystals(trichoplax, PaxB_clump[1])
 
-glandcell_type2(trichoplax, 800)
+    glandcell_type2(trichoplax, 800)
 
-glandcell_type3(trichoplax, 200)
+    glandcell_type3(trichoplax, 200)
 
-glandcell_type1(trichoplax, 200)
+    glandcell_type1(trichoplax, 200)
 
-lipophil(trichoplax, 600)
+    lipophil(trichoplax, 600)
 
-ampullae(trichoplax, 128)
+    ampullae(trichoplax, 128)
+end
 
 display(F)
 
