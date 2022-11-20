@@ -93,9 +93,15 @@ function move(trichoplax::Trichoplax, dp::Point2f)
     for i in 1:trichoplax.nLabels[]   # move labels
         trichoplax.label_handle[i][1] = trichoplax.label_handle[i][1][] .+= dp  
    end
+   for i in 1:trichoplax.nCelltypes[]   # move cells
+        for j in 1:trichoplax.nCells[i]
+            trichoplax.cell_handle[i][j][1] = trichoplax.cell_handle[i][j][1][] .+= dp  
+        end
+    end
 end
 
-function moveto(trichoplax::Trichoplax, dx::Point2f)
+
+function moveto(trichoplax::Trichoplax, p::Point2f)
     move(trichoplax, p-trichoplax.location[])
 end
 
@@ -221,6 +227,7 @@ function cells(trichoplax::Trichoplax,
             celltypename::String, size::Float32, color::RGBA, edgecolor::RGBA, edgewidth::Float64=1.0)
 #@infiltrate
     trichoplax.nCelltypes[] += 1
+    trichoplax.nCells[trichoplax.nCelltypes[]] = length(position)
     trichoplax.celltype_name[trichoplax.nCelltypes[]] = celltypename
     trichoplax.cell_location[trichoplax.nCelltypes[]] = position
 
@@ -451,6 +458,7 @@ function ampullae(trichoplax::Trichoplax, n::Int64)
     end
 
     trichoplax.nCelltypes[] += 1
+    trichoplax.nCells[trichoplax.nCelltypes[]] = length(location)
     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "ampulla"
     trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
@@ -491,7 +499,9 @@ function glandcell_type2(trichoplax::Trichoplax, n::Int64)
     # quadratic radial density gives linear increase in spatial density 
     density = x-> x < (trichoplax.radius[]-spacing) ? (x/trichoplax.radius[])^2 : 0.0
     location = radialcellsample(n, density , trichoplax.radius[], spacing, trichoplax)
+
     trichoplax.nCelltypes[] += 1
+    trichoplax.nCells[trichoplax.nCelltypes[]] = n
     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T2"   
     trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
@@ -517,7 +527,9 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
      # quadratic radial density gives linear increase in spatial density 
      density = x-> x < (trichoplax.radius[]-margin_width) ? 1.0 : 0.0
      location = radialcellsample(n, density , trichoplax.radius[], spacing, trichoplax)
+
      trichoplax.nCelltypes[] += 1
+     trichoplax.nCells[trichoplax.nCelltypes[]] = n
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
@@ -544,7 +556,9 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
      location = radialcellsample(n, 
             x->bumpdensity(x, 2.0, trichoplax.radius[]-margin_width, trichoplax.radius[]) , 
             trichoplax.radius[], spacing, trichoplax)
+
      trichoplax.nCelltypes[] += 1
+     trichoplax.nCells[trichoplax.nCelltypes[]] = n
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
@@ -577,7 +591,9 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
      # quadratic radial density gives linear increase in spatial density 
      location = radialcellsample(n,  x-> x < (trichoplax.radius[]-tr_margin_width) ? 1.0 : 0.0 , 
                 trichoplax.radius[], spacing, trichoplax)
+
      trichoplax.nCelltypes[] += 1
+     trichoplax.nCells[trichoplax.nCelltypes[]] = n
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
  
@@ -608,13 +624,13 @@ PaxB_clumpmean = PaxB()
 # crystal cells at PaxB clump means
 crystals(trichoplax, PaxB_clumpmean)
 
-glandcell_type2(trichoplax, 800)
+glandcell_type2(trichoplax, 100)
 
-glandcell_type3(trichoplax, 200)
+glandcell_type3(trichoplax, 100)
 
-glandcell_type1(trichoplax, 200)
+glandcell_type1(trichoplax, 100)
 
-lipophil(trichoplax, 400)
+lipophil(trichoplax, 100)
 
 ampullae(trichoplax, 128)
 
