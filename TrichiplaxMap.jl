@@ -11,7 +11,7 @@ pxl_per_um = 0.5      # pixels per micron display
 tr_diameter = 1000.0  # um
 MAXLABELS = 20
 MAXCELLTYPES = 20
-MAXCELLS = 1000   # maximum number of cells of any type
+MAXCELLS = 5000   # maximum number of cells of any type
 GLANDCELL_SIZE = 5.f0
 
 # derived parameters
@@ -254,6 +254,16 @@ function bumpdensity(x::Float32, q::Float64, r::Float64, R::Float64)
     end
 end
 
+# radial density with peak at origin (centre)
+function radialdensity(x::Float32, q::Float64, R::Float64)
+
+    if (x<R)
+        return ((R-x)/R)^q
+    end
+    return 0.0
+end
+
+
 # compute parameters (clumpmean, clumpsize) of random-sized randomly scattered clumps
 # a clump is a local bump (radial distribution around point C[i])
 # clump means have a radial bump distribution with shape exponent q 
@@ -370,16 +380,36 @@ end
 
 
 function Trox2()
-    # Trox-2 Jacobs et al. (2004)
-    Trox2density = x-> bumpdensity(x, 1.5, 425.0, 500.0)
+    # Trox-2 Jacobs et al. (2004); 
+    # ALSO TrDLx and TrMnx (patchy in same zone) Monteiro et al. (2006)
+     # Dlx is ANTP class. Limb and craniofacial development; axonal sprouting and neuronal migration 
+     # Mnx pancreatic insulin cells and motorneurons
+     # Monteiro &c also found TrHmx but did not identify spatial distribution
+     # Hmx labels sensory placodes in vertebrates
+    Trox2density = x-> bumpdensity(x, 1.0, 425.0, 500.0)
     minSeparation = 0.1  # minimum separation between points um
-    nTrox2_Particles = 15000 # number of label points
+    nTrox2_Particles = 18000 # number of label points
     Trox2_particle_location = radialsample(nTrox2_Particles, 
                             Trox2density, trichoplax.radius[], minSeparation)
     Trox2_particlesize = 2.0
-    Trox2_particlecolor = RGBA(7.0, 0.4, 0.1, 1.0)
+    Trox2_particlecolor = RGBA(0.95, 0.75, 0.2, 1.0)
     label(trichoplax, Trox2_particle_location, "Trox_2", Trox2_particlesize, Trox2_particlecolor)
 end
+
+# function TrDlx()
+#     #  Monteiro et al. (2006)
+#    
+#     TrDlxdensity = x-> bumpdensity(x, -.8, 425.0, 500.0)
+#     minSeparation = 0.1  # minimum separation between points um
+#     nTrDlx_Particles = 10000 # number of label points
+#     TrDlx_particle_location = radialsample(nTrDlx_Particles, 
+#                             TrDlxdensity, trichoplax.radius[], minSeparation)
+#     TrDlx_particlesize = 2.0
+#     TrDlx_particlecolor = RGBA(1.0, 1.0, 0.0, 1.0)
+#     label(trichoplax, TrDlx_particle_location, "TrDlx", TrDlx_particlesize, TrDlx_particlecolor)
+# end
+
+
 
 function PaxB()
     # trPaxB Hadrys et al. (2005)
@@ -405,6 +435,34 @@ function PaxB()
 
     return trPaxB_clump[1]
 end
+
+
+function chordinLike()
+
+    TrChrd_density = x-> radialdensity(x, 2.0, 100.0)
+    minSeparation = 0.1  # minimum separation between points um
+    nTrChrd_Particles = 1000 # number of label points
+    TrChrd_particle_location = radialsample(nTrChrd_Particles, 
+                            TrChrd_density, trichoplax.radius[], minSeparation)
+    TrChrd_particlesize = 2.0
+    TrChrd_particlecolor = RGBA(1.0, 0.0, 0.0, 1.0)
+    label(trichoplax, TrChrd_particle_location, "TrChrd", TrChrd_particlesize, TrChrd_particlecolor)
+
+end
+
+
+function bmp()
+    Trbmp_density = x-> bumpdensity(x, 1.5, 50., 475.)
+    minSeparation = 0.1  # minimum separation between points um
+    nTrbmp_Particles = 20000 # number of label points
+    Trbmp_particle_location = radialsample(nTrbmp_Particles, 
+                            Trbmp_density, trichoplax.radius[], minSeparation)
+    Trbmp_particlesize = 2.0
+    Trbmp_particlecolor = RGBA(0.85, 0.63, 0.0, 1.0)
+    label(trichoplax, Trbmp_particle_location, "TrBmp", Trbmp_particlesize, Trbmp_particlecolor)
+end
+
+
 
  #[Point2f(-1., 0.8), Point2f(1., 1.25), Point2f(1., -1.25), Point2f(-1., -0.8)] 
 function crystals(trichoplax::Trichoplax, location::Vector{Point2f})
@@ -501,11 +559,11 @@ function glandcell_type2(trichoplax::Trichoplax, n::Int64)
     location = radialcellsample(n, density , trichoplax.radius[], spacing, trichoplax)
 
     trichoplax.nCelltypes[] += 1
-    trichoplax.nCells[trichoplax.nCelltypes[]] = n
+    trichoplax.nCells[trichoplax.nCelltypes[]] = length(location)
     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T2"   
     trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
-    for j in 1:n
+    for j in 1:length(location)
         trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
         poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
         color = gland2_colour, strokecolor = outline_colour, strokewidth = outline_width)
@@ -529,11 +587,11 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
      location = radialcellsample(n, density , trichoplax.radius[], spacing, trichoplax)
 
      trichoplax.nCelltypes[] += 1
-     trichoplax.nCells[trichoplax.nCelltypes[]] = n
+     trichoplax.nCells[trichoplax.nCelltypes[]] = length(location)
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
-     for j in 1:n
+     for j in 1:length(location)
          trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
          poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
          color = gland3_colour, strokecolor = outline_colour, strokewidth = outline_width)
@@ -544,7 +602,7 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
  function glandcell_type1(trichoplax::Trichoplax, n::Int64)
     # Mayorova et al. (2019)
  
-     gland1_colour =  RGBA(.25, .8, .25, 1.0) 
+     gland1_colour =  RGBA(.2, .8, .75, 1.0) 
      outline_colour = RGBA(0., 0., 1., 1.0)
      outline_width = 0.25
      spacing = 10.0
@@ -558,11 +616,11 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
             trichoplax.radius[], spacing, trichoplax)
 
      trichoplax.nCelltypes[] += 1
-     trichoplax.nCells[trichoplax.nCelltypes[]] = n
+     trichoplax.nCells[trichoplax.nCelltypes[]] = length(location)
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
-     for j in 1:n
+     for j in 1:length(location)
          trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
          poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
          color = gland1_colour, strokecolor = outline_colour, strokewidth = outline_width)
@@ -593,11 +651,11 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
                 trichoplax.radius[], spacing, trichoplax)
 
      trichoplax.nCelltypes[] += 1
-     trichoplax.nCells[trichoplax.nCelltypes[]] = n
+     trichoplax.nCells[trichoplax.nCelltypes[]] = length(location)
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
  
-     for j in 1:n
+     for j in 1:length(location)
          trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
          poly!(trichoplax.location.+location[j].+rotate(lipo_size*shape, rand()[]*2π),
          color = lipo_colour, strokecolor = outline_colour, strokewidth = outline_width)
@@ -621,16 +679,21 @@ worldMap = zeros(pixelWide, pixelWide)
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
 Trox2()
 PaxB_clumpmean = PaxB()
+
+chordinLike()
+bmp()
+
+
 # crystal cells at PaxB clump means
 crystals(trichoplax, PaxB_clumpmean)
 
-glandcell_type2(trichoplax, 100)
+glandcell_type2(trichoplax, 800)
 
-glandcell_type3(trichoplax, 100)
+glandcell_type3(trichoplax, 200)
 
-glandcell_type1(trichoplax, 100)
+glandcell_type1(trichoplax, 200)
 
-lipophil(trichoplax, 100)
+lipophil(trichoplax, 600)
 
 ampullae(trichoplax, 128)
 
