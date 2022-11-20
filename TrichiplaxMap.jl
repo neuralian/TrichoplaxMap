@@ -12,6 +12,7 @@ tr_diameter = 1000.0  # um
 MAXLABELS = 20
 MAXCELLTYPES = 20
 MAXCELLS = 1000   # maximum number of cells of any type
+GLANDCELL_SIZE = 5.f0
 
 # derived parameters
 tr_location = Point2f(worldWide/2.0, worldWide/2.0)
@@ -186,7 +187,7 @@ function cells(trichoplax::Trichoplax,
     for j in 1:length(position)
         trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
             poly!(trichoplax.location.+position[j].+rotate(size*shape, orientation[j]),
-            color = color, strokecolor = edgecolor, strokewidth = edgewidth)
+            color = color, strokecolor = edgecolor, strokewidth = edgewidth, overdraw = true)
     end
 end
 
@@ -278,8 +279,47 @@ end
 
 # cell shapes
  # crystal cell = trapezoid with origin at centre, "line of sight" axis +x 
-crystal_cell_shape =    [Point2f(-1., 0.8), Point2f(1., 1.25), Point2f(1., -1.25), Point2f(-1., -0.8)]   # trapezoid with origin at centre, "line of sight" axis +x 
-  
+#crystal_cell_shape =    [Point2f(-1., 0.8), Point2f(1., 1.25), Point2f(1., -1.25), Point2f(-1., -0.8)]   # trapezoid with origin at centre, "line of sight" axis +x 
+function ampulla_shape(height::Float64=1.0, basalwidth::Float64=0.4, apicalwidth::Float64=0.30,
+    neckheight::Float64=0.20, necklength::Float64=0.30, neckwidth::Float64=0.20, 
+    chamfer::Float64 = 0.05)
+# base shape symmetric around vertical axis, apical face up, origin at center of apical face
+# vertices listed clockwise from top right
+#        
+#            16--1
+#            /    \
+#           15     2
+#            |     |
+#           14     3
+#            \    /
+#            13   4
+#            |   |
+#           12    5  
+#           /      \
+#          11       6
+#           |       |
+#          10       7
+#           \      /
+#           9-----8
+
+
+[
+Point2f(apicalwidth/2.0-chamfer, 0.0), Point2f(apicalwidth/2.0, -chamfer),
+Point2f(apicalwidth/2.0, -neckheight+chamfer/2.0), 
+Point2f(neckwidth/2.0, -neckheight-chamfer/2.0),
+Point2f(neckwidth/2.0, -neckheight-necklength+chamfer/2.0), 
+Point2f(basalwidth/2.0-chamfer, -neckheight-necklength-chamfer/2.0),
+Point2f(basalwidth/2.0, -height+chamfer), 
+Point2f(basalwidth/2.0-chamfer, -height),
+Point2f(-basalwidth/2.0+chamfer, -height),
+Point2f(-basalwidth/2.0, -height+chamfer),   
+Point2f(-basalwidth/2.0+chamfer, -neckheight-necklength-chamfer/2.0),  
+Point2f(-neckwidth/2.0, -neckheight-necklength+chamfer/2.0),                     
+Point2f(-neckwidth/2.0, -neckheight-chamfer/2.0),
+Point2f(-apicalwidth/2.0, -neckheight+chamfer/2.0),       
+Point2f(-apicalwidth/2.0, -chamfer), Point2f(-apicalwidth/2.0+chamfer, 0.0)
+]
+end  
 
 
 
@@ -341,57 +381,19 @@ function crystals(trichoplax::Trichoplax, location::Vector{Point2f})
         xtal_shape, "crystals", crystal_size, crystal_colour, outline_colour, outline_width)
 end
 
-function ampulla_shape(height::Float64=1.0, basalwidth::Float64=0.4, apicalwidth::Float64=0.30,
-                    neckheight::Float64=0.20, necklength::Float64=0.30, neckwidth::Float64=0.20, 
-                    chamfer::Float64 = 0.05)
-    # base shape symmetric around vertical axis, apical face up, origin at center of apical face
-    # vertices listed clockwise from top right
-    #        
-    #            16--1
-    #            /    \
-    #           15     2
-    #            |     |
-    #           14     3
-    #            \    /
-    #            13   4
-    #            |   |
-    #           12    5  
-    #           /      \
-    #          11       6
-    #           |       |
-    #          10       7
-    #           \      /
-    #           9-----8
 
-    [
-        Point2f(apicalwidth/2.0-chamfer, 0.0), Point2f(apicalwidth/2.0, -chamfer),
-        Point2f(apicalwidth/2.0, -neckheight+chamfer/2.0), 
-        Point2f(neckwidth/2.0, -neckheight-chamfer/2.0),
-        Point2f(neckwidth/2.0, -neckheight-necklength+chamfer/2.0), 
-        Point2f(basalwidth/2.0-chamfer, -neckheight-necklength-chamfer/2.0),
-        Point2f(basalwidth/2.0, -height+chamfer), 
-        Point2f(basalwidth/2.0-chamfer, -height),
-        Point2f(-basalwidth/2.0+chamfer, -height),
-        Point2f(-basalwidth/2.0, -height+chamfer),   
-        Point2f(-basalwidth/2.0+chamfer, -neckheight-necklength-chamfer/2.0),  
-        Point2f(-neckwidth/2.0, -neckheight-necklength+chamfer/2.0),                     
-        Point2f(-neckwidth/2.0, -neckheight-chamfer/2.0),
-        Point2f(-apicalwidth/2.0, -neckheight+chamfer/2.0),       
-        Point2f(-apicalwidth/2.0, -chamfer), Point2f(-apicalwidth/2.0+chamfer, 0.0)
-    ]
-end
 
 function ampullae(trichoplax::Trichoplax, n::Int64)
 
 
     # ampulla cells are default gland cell shape
-    ampl_size = 16.0f0
+    ampl_size = 24.0f0
     ampl_shape = ampulla_shape()  
     spacing =  10.0
     lateral_jitter = .1  # lateral shape jitter, sd as proportion of ampl_size
     long_jitter = .35     # length jitter, ... 
 
-    ampl_colour = RGBA(.25, .8, .25, 1.0)
+    ampl_colour =  RGBA(.1, 1.0, .5, 1.0)  
     outline_colour = RGBA(0., 0., 0., 1.0)
     outline_width = 0.25
 
@@ -420,7 +422,7 @@ function ampullae(trichoplax::Trichoplax, n::Int64)
         # jitter: apical face (1st 2 layers) fixed, 6 deeper layers have random jitter
         # that scales with distance from apical face
         Ljit = rand(truncated(Normal(0.0, lateral_jitter*ampl_size), -lateral_jitter*ampl_size, lateral_jitter*ampl_size), 6).*(1:6)./6.0
-        Hjit = rand(truncated(Normal(0.0, long_jitter*ampl_size), -long_jitter*ampl_size, long_jitter*ampl_size), 6).*(1:6)./6.0
+        Hjit = rand(truncated(Normal(0.0, long_jitter*GLANDCELL_SIZE), -long_jitter*ampl_size, long_jitter*ampl_size), 6).*(1:6)./6.0
         shape = ampl_size*ampl_shape
        # @infiltrate
         for k in 1:6
@@ -438,6 +440,114 @@ function ampullae(trichoplax::Trichoplax, n::Int64)
 end
 
 
+function glandcell_type2(trichoplax::Trichoplax, n::Int64)
+   # Mayorova et al. (2019)
+
+    gland2_colour =  RGBA(.1, 1.0, .5, 1.0)  
+    gland2_size = 4.0f0
+    outline_colour = RGBA(0., 0., 0., 1.0)
+    outline_width = 0.25
+    spacing = 10.0
+
+    shape = [Point2f(cos(Θ), sin(Θ)) for Θ in (1:6)*2π/6]
+    # nb because area element increases linearly with distance from center, 
+    # quadratic radial density gives linear increase in spatial density 
+    density = x-> x < (trichoplax.radius[]-spacing) ? (x/trichoplax.radius[])^2 : 0.0
+    location = radialsample(n, density , trichoplax.radius[], spacing)
+    trichoplax.nCelltypes[] += 1
+    trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T2"   
+
+    for j in 1:n
+        trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
+        poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
+        color = gland2_colour, strokecolor = outline_colour, strokewidth = outline_width)
+    end
+
+end
+
+function glandcell_type3(trichoplax::Trichoplax, n::Int64)
+    # Mayorova et al. (2019)
+ 
+     gland3_colour =  RGBA(.1, .7, .4, 1.0) 
+     outline_colour = RGBA(0., 0., 1., 1.0)
+     outline_width = 0.25
+     spacing = 10.0
+     margin_width = 100.
+ 
+     shape = [Point2f(cos(Θ), sin(Θ)) for Θ in (1:6)*2π/6]
+     # nb because area element increases linearly with distance from center, 
+     # quadratic radial density gives linear increase in spatial density 
+     density = x-> x < (trichoplax.radius[]-margin_width) ? 1.0 : 0.0
+     location = radialsample(n, density , trichoplax.radius[], spacing)
+     trichoplax.nCelltypes[] += 1
+     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
+ 
+     for j in 1:n
+         trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
+         poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
+         color = gland3_colour, strokecolor = outline_colour, strokewidth = outline_width)
+     end
+ 
+ end
+
+ function glandcell_type1(trichoplax::Trichoplax, n::Int64)
+    # Mayorova et al. (2019)
+ 
+     gland1_colour =  RGBA(.25, .8, .25, 1.0) 
+     outline_colour = RGBA(0., 0., 1., 1.0)
+     outline_width = 0.25
+     spacing = 10.0
+     margin_width = 100.
+ 
+     shape = [Point2f(cos(Θ), sin(Θ)) for Θ in (1:6)*2π/6]
+     # nb because area element increases linearly with distance from center, 
+     # quadratic radial density gives linear increase in spatial density 
+     location = radialsample(n, 
+            x->bumpdensity(x, 2.0, trichoplax.radius[]-margin_width, trichoplax.radius[]) , trichoplax.radius[], spacing)
+     trichoplax.nCelltypes[] += 1
+     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
+ 
+     for j in 1:n
+         trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
+         poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
+         color = gland1_colour, strokecolor = outline_colour, strokewidth = outline_width)
+     end
+ 
+ end
+
+ function lipophil(trichoplax::Trichoplax, n::Int64)
+    # Mayorova et al. (2019)
+ 
+     lipo_colour =  RGBA(1.0, .75, 1.0, 1.0) 
+     lipo_size = 5.0f0
+     outline_colour = RGBA(0., 0., 1., 1.0)
+     outline_width = 0.25
+     spacing = 10.0
+     tr_margin_width = 100.
+     cell_radius = 1.0
+     chamfer = 0.4
+ 
+   
+     shape = [Point2f(cell_radius-chamfer, -cell_radius), Point2f(cell_radius, -cell_radius+chamfer),
+              Point2f(cell_radius, cell_radius-chamfer),  Point2f(cell_radius-chamfer, cell_radius),
+              Point2f(-cell_radius+chamfer, cell_radius), Point2f(-cell_radius, cell_radius-chamfer),
+              Point2f(-cell_radius, -cell_radius+chamfer), Point2f(-cell_radius+chamfer, -cell_radius)]
+     # nb because area element increases linearly with distance from center, 
+     # quadratic radial density gives linear increase in spatial density 
+     location = radialsample(n,  x-> x < (trichoplax.radius[]-tr_margin_width) ? 1.0 : 0.0 , 
+                trichoplax.radius[], spacing)
+     trichoplax.nCelltypes[] += 1
+     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
+ 
+     for j in 1:n
+         trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
+         poly!(trichoplax.location.+location[j].+rotate(lipo_size*shape, rand()[]*2π),
+         color = lipo_colour, strokecolor = outline_colour, strokewidth = outline_width)
+     end
+ 
+ end
+
+
 
 F = Figure(resolution = (worldWide*pxl_per_um,worldWide*pxl_per_um))
 ax = Axis(F[1,1], aspect = 1)
@@ -449,11 +559,20 @@ hidedecorations!(ax)
 
 worldMap = zeros(pixelWide, pixelWide)
 
-
 # construct and draw Trichoplax
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
 Trox2()
 PaxB_clumpmean = PaxB()
+
+
+glandcell_type2(trichoplax, 800)
+
+glandcell_type3(trichoplax, 200)
+
+glandcell_type1(trichoplax, 200)
+
+lipophil(trichoplax, 400)
+
 # crystal cells at PaxB clump means
 crystals(trichoplax, PaxB_clumpmean)
 
