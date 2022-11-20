@@ -31,6 +31,7 @@ struct Trichoplax
     nCells::Vector{Int64}       # number of cells of each type
     cell_handle::Vector{Vector{Poly}}  # cell_handle[i][j] is handle of jth cell of type i 
     celltype_name::Vector{String}
+    cell_location::Vector{Vector{Point2f}}
 end
 
 
@@ -42,17 +43,31 @@ function Trichoplax(radius::Float64, location::Point2f)
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
                 [0], Vector{Int64}(undef, MAXCELLTYPES),
                 [ Vector{Poly{Tuple{Vector{Point{2, Float32}}}}}(undef,MAXCELLS) for _ = 1:MAXCELLTYPES], 
-                Vector{String}(undef, MAXCELLTYPES) 
+                Vector{String}(undef, MAXCELLTYPES),
+                [Vector{Point2f}(undef, MAXCELLS) for _ in 1:MAXCELLTYPES]
             )
              #   [0], [scatter!(Point2f(NaN, NaN))], [""])
 end
 
+# distance utilities, for placing cells and labels
 distance(p::Point2f) = sqrt(p[1]^2 + p[2]^2)
 distance(p::Point2f, q::Point2f) = distance(p-q)
 distance(p::Point2f, Q::Vector{Point2f}) = [distance(p,q) for q in Q]
 # TRUE if any points in Q are within Δ of p
 anycloserthan(Δ::Float64, p::Point2f, Q::Vector{Point2f}) = 
                length(Q)>0 ? length(findall(distance(p,Q).<Δ))>0 : false
+function anycell_closerthan(Δ::Float64, me::Point2f, whanau::Vector{Point2f}, trichoplax::Trichoplax)
+
+    # whanau are other cells of the same kind, curently under construction
+    cellnearby = anycloserthan(Δ, me, whanau)
+    if !cellnearby
+        for celltype in 1:trichoplax.ncelltypes[]
+            if anycloserthan(Δ, me, trichoplax.cell_location[celltype])
+                return true
+            end
+        end
+    end
+end
 
 function withinanyclump(p::Point2f, C::Vector{Point2f}, S::Vector{Float64})
     # true if p is within a clump
@@ -160,10 +175,6 @@ function rotate(P::Vector{Point2f}, Θ)
     return Q
 end
 
-
-
-
-        
 # draw label points
 function label(trichoplax::Trichoplax, P::Vector{Point2f}, labelName::String, 
               size::Float64 = 25.0, color::RGBA=RGBA(.8, .4, .2, 1.), marker=:circle)
@@ -180,9 +191,10 @@ end
 function cells(trichoplax::Trichoplax, 
             position::Vector{Point2f}, orientation::Vector{Float64}, shape::Vector{Point2f},
             celltypename::String, size::Float32, color::RGBA, edgecolor::RGBA, edgewidth::Float64=1.0)
-
+#@infiltrate
     trichoplax.nCelltypes[] += 1
     trichoplax.celltype_name[trichoplax.nCelltypes[]] = celltypename
+    trichoplax.cell_location[trichoplax.nCelltypes[]] = position
 
     for j in 1:length(position)
         trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
@@ -190,8 +202,6 @@ function cells(trichoplax::Trichoplax,
             color = color, strokecolor = edgecolor, strokewidth = edgewidth, overdraw = true)
     end
 end
-
-
 
 # radial density function r->bumpdensity(r::Float32, ...)
 # bump is triangle between r and R with max 1 at midpoint, raised to power q
@@ -245,8 +255,6 @@ function clumpdensity(x::Point2f, cmean::Vector{Point{2, Float32}}, s::Vector{Fl
     end
     return f
 end
-
-
 
 # sample of points p::Point2f from clump density 
 # clump is tuple of clump locations and sizes returned by clumps()
@@ -416,6 +424,7 @@ function ampullae(trichoplax::Trichoplax, n::Int64)
 
     trichoplax.nCelltypes[] += 1
     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "ampulla"
+    trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
     for j in 1:length(location)
 
@@ -456,6 +465,7 @@ function glandcell_type2(trichoplax::Trichoplax, n::Int64)
     location = radialsample(n, density , trichoplax.radius[], spacing)
     trichoplax.nCelltypes[] += 1
     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T2"   
+    trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
     for j in 1:n
         trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
@@ -481,7 +491,8 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
      location = radialsample(n, density , trichoplax.radius[], spacing)
      trichoplax.nCelltypes[] += 1
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
- 
+     trichoplax.cell_location[trichoplax.nCelltypes[]] = location
+
      for j in 1:n
          trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
          poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
@@ -506,7 +517,8 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
             x->bumpdensity(x, 2.0, trichoplax.radius[]-margin_width, trichoplax.radius[]) , trichoplax.radius[], spacing)
      trichoplax.nCelltypes[] += 1
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
- 
+     trichoplax.cell_location[trichoplax.nCelltypes[]] = location
+
      for j in 1:n
          trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
          poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
@@ -538,6 +550,7 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
                 trichoplax.radius[], spacing)
      trichoplax.nCelltypes[] += 1
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
+     trichoplax.cell_location[trichoplax.nCelltypes[]] = location
  
      for j in 1:n
          trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
@@ -565,13 +578,13 @@ Trox2()
 PaxB_clumpmean = PaxB()
 
 
-glandcell_type2(trichoplax, 800)
+glandcell_type2(trichoplax, 100)
 
-glandcell_type3(trichoplax, 200)
+glandcell_type3(trichoplax, 100)
 
-glandcell_type1(trichoplax, 200)
+glandcell_type1(trichoplax, 100)
 
-lipophil(trichoplax, 400)
+lipophil(trichoplax, 100)
 
 # crystal cells at PaxB clump means
 crystals(trichoplax, PaxB_clumpmean)
