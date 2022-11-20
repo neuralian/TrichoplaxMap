@@ -56,17 +56,19 @@ distance(p::Point2f, Q::Vector{Point2f}) = [distance(p,q) for q in Q]
 # TRUE if any points in Q are within Δ of p
 anycloserthan(Δ::Float64, p::Point2f, Q::Vector{Point2f}) = 
                length(Q)>0 ? length(findall(distance(p,Q).<Δ))>0 : false
+
 function anycell_closerthan(Δ::Float64, me::Point2f, whanau::Vector{Point2f}, trichoplax::Trichoplax)
 
     # whanau are other cells of the same kind, curently under construction
     cellnearby = anycloserthan(Δ, me, whanau)
     if !cellnearby
-        for celltype in 1:trichoplax.ncelltypes[]
+        for celltype in 1:trichoplax.nCelltypes[]
             if anycloserthan(Δ, me, trichoplax.cell_location[celltype])
                 return true
             end
         end
     end
+    return cellnearby
 end
 
 function withinanyclump(p::Point2f, C::Vector{Point2f}, S::Vector{Float64})
@@ -109,6 +111,32 @@ function radialsample(n::Int64, density::Function,  rmax::Float64, Δ::Float64)
         p = Point2f((2.0*rand(2).-1.0).*rmax)  # uniform random point in area containing the trichoplax
         if rand()<density(distance(p)) # provisional accept based on density
             if (popCount < 1) || !anycloserthan(Δ, p, P[1:popCount]) 
+                popCount += 1    
+                P[popCount] = p           # accept
+                crowdCount = 0
+            else
+                crowdCount += 1
+            end
+        end
+    end
+    print(popCount==n ? "OK: " : "WARNING: ")
+    println(popCount, " of ", n, " points created" )
+    return P[1:popCount]
+end
+
+
+# sample of n points p::point2f from density(r) defined on (0,rmax), where r is distance of p from origin
+# minimum distance Δ between all cells, including other cell types
+function radialcellsample(n::Int64, density::Function,  rmax::Float64, Δ::Float64, trichoplax::Trichoplax)
+    crowdCount = 0
+    overCrowd = 25   # will exit if fail to find room to place a label consecutively this many times
+
+    popCount = 0
+    P = Array{Point2f,1}(undef, n)  # array of n points, initially undefined
+    while (popCount < n) && (crowdCount < overCrowd)
+        p = Point2f((2.0*rand(2).-1.0).*rmax)  # uniform random point in area containing the trichoplax
+        if rand()<density(distance(p)) # provisional accept based on density
+            if (popCount < 1) || !anycell_closerthan(Δ, p, P[1:popCount], trichoplax) 
                 popCount += 1    
                 P[popCount] = p           # accept
                 crowdCount = 0
@@ -378,7 +406,7 @@ function crystals(trichoplax::Trichoplax, location::Vector{Point2f})
     xtal_shape = [ Point2f(0.8, -1.0), Point2f(1.25, 1.), Point2f(-1.25, 1.), Point2f(-.8, -1.) ]   
     xtal_wobbleamount = π/12.
     xtal_wobble = rand(Normal(0.0, xtal_wobbleamount), length(location))
-    crystal_size = 4.8f0
+    crystal_size = 6.f0
     crystal_colour = RGBA(.85, 0.9, 1.0, 1.)
     outline_colour = RGBA(0.25, 0.25, 1.0, 1.0)
     outline_width = 1.
@@ -462,7 +490,7 @@ function glandcell_type2(trichoplax::Trichoplax, n::Int64)
     # nb because area element increases linearly with distance from center, 
     # quadratic radial density gives linear increase in spatial density 
     density = x-> x < (trichoplax.radius[]-spacing) ? (x/trichoplax.radius[])^2 : 0.0
-    location = radialsample(n, density , trichoplax.radius[], spacing)
+    location = radialcellsample(n, density , trichoplax.radius[], spacing, trichoplax)
     trichoplax.nCelltypes[] += 1
     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T2"   
     trichoplax.cell_location[trichoplax.nCelltypes[]] = location
@@ -488,7 +516,7 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
      # nb because area element increases linearly with distance from center, 
      # quadratic radial density gives linear increase in spatial density 
      density = x-> x < (trichoplax.radius[]-margin_width) ? 1.0 : 0.0
-     location = radialsample(n, density , trichoplax.radius[], spacing)
+     location = radialcellsample(n, density , trichoplax.radius[], spacing, trichoplax)
      trichoplax.nCelltypes[] += 1
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
@@ -513,8 +541,9 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
      shape = [Point2f(cos(Θ), sin(Θ)) for Θ in (1:6)*2π/6]
      # nb because area element increases linearly with distance from center, 
      # quadratic radial density gives linear increase in spatial density 
-     location = radialsample(n, 
-            x->bumpdensity(x, 2.0, trichoplax.radius[]-margin_width, trichoplax.radius[]) , trichoplax.radius[], spacing)
+     location = radialcellsample(n, 
+            x->bumpdensity(x, 2.0, trichoplax.radius[]-margin_width, trichoplax.radius[]) , 
+            trichoplax.radius[], spacing, trichoplax)
      trichoplax.nCelltypes[] += 1
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
@@ -546,8 +575,8 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
               Point2f(-cell_radius, -cell_radius+chamfer), Point2f(-cell_radius+chamfer, -cell_radius)]
      # nb because area element increases linearly with distance from center, 
      # quadratic radial density gives linear increase in spatial density 
-     location = radialsample(n,  x-> x < (trichoplax.radius[]-tr_margin_width) ? 1.0 : 0.0 , 
-                trichoplax.radius[], spacing)
+     location = radialcellsample(n,  x-> x < (trichoplax.radius[]-tr_margin_width) ? 1.0 : 0.0 , 
+                trichoplax.radius[], spacing, trichoplax)
      trichoplax.nCelltypes[] += 1
      trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
@@ -576,18 +605,16 @@ worldMap = zeros(pixelWide, pixelWide)
 trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
 Trox2()
 PaxB_clumpmean = PaxB()
-
-
-glandcell_type2(trichoplax, 100)
-
-glandcell_type3(trichoplax, 100)
-
-glandcell_type1(trichoplax, 100)
-
-lipophil(trichoplax, 100)
-
 # crystal cells at PaxB clump means
 crystals(trichoplax, PaxB_clumpmean)
+
+glandcell_type2(trichoplax, 800)
+
+glandcell_type3(trichoplax, 200)
+
+glandcell_type1(trichoplax, 200)
+
+lipophil(trichoplax, 400)
 
 ampullae(trichoplax, 128)
 
