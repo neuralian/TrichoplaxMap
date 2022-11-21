@@ -6,17 +6,16 @@ using Infiltrator
 Random.seed!(121213)
 
 # global parameters
-worldWide = 1600.0 # microns
+
 pxl_per_um = 0.5      # pixels per micron display
 tr_diameter = 1000.0  # um
+worldHigh = 1200.0 # microns
 MAXLABELS = 20
 MAXCELLTYPES = 20
 MAXCELLS = 5000   # maximum number of cells of any type
+MAXBAX = 100  # max bacteria per cluster
 GLANDCELL_SIZE = 5.f0
 
-# derived parameters
-tr_location = Point2f(worldWide/2.0, worldWide/2.0)
-pixelWide = Int64(round(worldWide*pxl_per_um))
 
 # Trichoplax Utilities
 struct Trichoplax
@@ -37,7 +36,7 @@ end
 
 function Trichoplax(radius::Float64, location::Point2f)
     plt_handle =  poly!(Circle(location, radius), 
-                  color = RGBA(.8, .8, .6, .5), strokecolor = RGB(.6, .6, .6), strokewidth = .25)
+                  color = RGBA(.8, .7, .4, .6), strokecolor = RGB(.6, .6, .6), strokewidth = .25)
     Trichoplax( zeros(1,1), 
                 [radius], [location], plt_handle, 
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
@@ -665,38 +664,48 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
  
  end
 
- function bacteria(nClumps::Int64, nPerClump::Int64, clumpSd::Float64)
+function bacteria(clumpx::Float64, nClumps::Int64, nPerClump::Int64)
     # uniformly scattered clumps, Poisson count per clump, Gaussian scattered
 
-    clumpCenter = worldWide*rand(Point2f, nClumps)
+
+    clumpGrandMean = Point2f(clumpx, worldHigh/2.0)
+    betweenSD = 100.0
+    withinSD = 12.0
+    clumpMean = [clumpGrandMean + Point2f(rand(Normal(0.0, betweenSD), 2))   for _ in 1:nClumps ]
     clumpSize = rand(Poisson(nPerClump), nClumps)
-    @infiltrate
+
+   bacteria_handle = [Vector{Scatter}(undef,clumpSize[i]) for i in 1:nClumps]
     for clump in 1:nClumps
         for bacterium in 1:clumpSize[clump]
-            dp = Point2f(rand(Normal(0.0, clumpSd),2))
-            scatter!(clumpCenter[clump].+dp, markersize = 5.0, color = :red)
+            dp = Point2f(rand(Normal(0.0, withinSD),2))
+            bacteria_handle[clump][bacterium] = 
+                 scatter!(clumpMean[clump].+dp, markersize = 5.0, color = :red)
         end
     end
-
-
-
+    return bacteria_handle
  end
 
+video_aspectratio = 16.0/9.0
+video_worldHigh = 1200
+video_screenpixels = (video_aspectratio*worldHigh*pxl_per_um, worldHigh*pxl_per_um)
 
 
-
-F = Figure(resolution = (worldWide*pxl_per_um,worldWide*pxl_per_um))
-ax = Axis(F[1,1], aspect = 1)
-xlims!(0, worldWide)
-ylims!(0, worldWide)
+# 16:9 aspect
+F = Figure(resolution = video_screenpixels)
+ax = Axis(F[1,1], aspect = DataAspect())
+xlims!(0, video_aspectratio*worldHigh)
+ylims!(0, worldHigh)
 hidedecorations!(ax)
 
 # construct world
 
 worldMap = zeros(pixelWide, pixelWide)
 
+clumpx = 1.2*worldHigh
+bacteria(clumpx, 24, 6)
+
 # construct and draw Trichoplax
-trichoplax  = Trichoplax(tr_diameter/2.0, tr_location)
+trichoplax  = Trichoplax(tr_diameter/2.0, Point2f(worldHigh/2.0, worldHigh/2.0))
 
 PaxB_clump = get_PaxB_clumps()  
 
@@ -713,17 +722,25 @@ if showCells
     # crystal cells at PaxB clump means
     crystals(trichoplax, PaxB_clump[1])
 
-    glandcell_type2(trichoplax, 800)
+    glandcell_type2(trichoplax, 100)
 
-    glandcell_type3(trichoplax, 200)
+    glandcell_type3(trichoplax, 100)
 
-    glandcell_type1(trichoplax, 200)
+    glandcell_type1(trichoplax, 100)
 
-    lipophil(trichoplax, 600)
+    lipophil(trichoplax, 100)
 
     ampullae(trichoplax, 128)
 end
 
+
+
 display(F)
+
+
+while trichoplax.location[][1]<clumpx
+    move(trichoplax, Point2f(5., 0.))
+    sleep(.01)
+end
 
 
