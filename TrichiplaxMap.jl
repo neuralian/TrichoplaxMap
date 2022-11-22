@@ -15,6 +15,10 @@ MAXCELLTYPES = 20
 MAXCELLS = 5000   # maximum number of cells of any type
 MAXBAX = 100  # max bacteria per cluster
 GLANDCELL_SIZE = 5.f0
+# type 2 gland cells happen to be the second cell type to be created
+# WARNING: Definition of GLANDCELL_TYPE2_INDEX will have to be changed
+#          if cell type creation order changes (cos I'm too lazy to write code to make this happen)
+GLANDCELL_TYPE2_INDEX = 2   
 
 
 # Trichoplax Utilities
@@ -31,19 +35,21 @@ struct Trichoplax
     cell_handle::Vector{Vector{Poly}}  # cell_handle[i][j] is handle of jth cell of type i 
     celltype_name::Vector{String}
     cell_location::Vector{Vector{Point2f}}
+    v::Vector{Point2f}      # velocity
 end
 
 
-function Trichoplax(radius::Float64, location::Point2f)
+function Trichoplax(radius::Float64, location::Point2f, v0::Point2f=Point2f(0,0))
     plt_handle =  poly!(Circle(location, radius), 
-                  color = RGBA(.8, .7, .4, .6), strokecolor = RGB(.6, .6, .6), strokewidth = .25)
+                  color = RGBA(.8, .7, .7, .5), strokecolor = RGB(.6, .6, .6), strokewidth = .25)
     Trichoplax( zeros(1,1), 
                 [radius], [location], plt_handle, 
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
                 [0], Vector{Int64}(undef, MAXCELLTYPES),
                 [ Vector{Poly{Tuple{Vector{Point{2, Float32}}}}}(undef,MAXCELLS) for _ = 1:MAXCELLTYPES], 
                 Vector{String}(undef, MAXCELLTYPES),
-                [Vector{Point2f}(undef, MAXCELLS) for _ in 1:MAXCELLTYPES]
+                [Vector{Point2f}(undef, MAXCELLS) for _ in 1:MAXCELLTYPES],
+                [v0]
             )
              #   [0], [scatter!(Point2f(NaN, NaN))], [""])
 end
@@ -85,16 +91,16 @@ end
 #     color = :white, strokecolor = :black, strokewidth = 1)
 # end
 
-function move(trichoplax::Trichoplax, dp::Point2f)
+function move(trichoplax::Trichoplax)
 
-    trichoplax.location[] +=  dp
+    trichoplax.location[] +=  trichoplax.v[]
     trichoplax.edge_handle[1] = Circle(trichoplax.location[], trichoplax.radius[])  # move outline
     for i in 1:trichoplax.nLabels[]   # move labels
-        trichoplax.label_handle[i][1] = trichoplax.label_handle[i][1][] .+= dp  
+        trichoplax.label_handle[i][1] = trichoplax.label_handle[i][1][] .+= trichoplax.v[]  
    end
    for i in 1:trichoplax.nCelltypes[]   # move cells
         for j in 1:trichoplax.nCells[i]
-            trichoplax.cell_handle[i][j][1] = trichoplax.cell_handle[i][j][1][] .+= dp  
+            trichoplax.cell_handle[i][j][1] = trichoplax.cell_handle[i][j][1][] .+= trichoplax.v[]  
         end
     end
 end
@@ -664,48 +670,67 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
  
  end
 
-function bacteria(clumpx::Float64, nClumps::Int64, nPerClump::Int64)
-    # uniformly scattered clumps, Poisson count per clump, Gaussian scattered
+function scatter_bacteria(location::Point2f, nClumps::Int64, nPerClump::Int64)
+    # clump means Gaussian scattered around location (x,y)
+    # Poisson count per clump, each Gaussian scattered around its mean location
 
-
-    clumpGrandMean = Point2f(clumpx, worldHigh/2.0)
     betweenSD = 100.0
     withinSD = 12.0
-    clumpMean = [clumpGrandMean + Point2f(rand(Normal(0.0, betweenSD), 2))   for _ in 1:nClumps ]
+    clump = [location .+ Point2f(rand(Normal(0.0, betweenSD), 2)) for _ in 1:nClumps]
     clumpSize = rand(Poisson(nPerClump), nClumps)
 
-   bacteria_handle = [Vector{Scatter}(undef,clumpSize[i]) for i in 1:nClumps]
-    for clump in 1:nClumps
-        for bacterium in 1:clumpSize[clump]
-            dp = Point2f(rand(Normal(0.0, withinSD),2))
-            bacteria_handle[clump][bacterium] = 
-                 scatter!(clumpMean[clump].+dp, markersize = 5.0, color = :red)
+    p = Vector{Point2f}(undef, 0)   # empty vector
+    for i in 1:nClumps
+        for j in 1:clumpSize[i]
+            push!(p, clump[i] + Point2f(rand(Normal(0.0, withinSD), 2) ) )
         end
     end
-    return bacteria_handle
+    scatter!(p, markersize = 5.0, color = :red)
  end
 
-video_aspectratio = 16.0/9.0
-video_worldHigh = 1200
-video_screenpixels = (video_aspectratio*worldHigh*pxl_per_um, worldHigh*pxl_per_um)
 
+# indices of type 2 gland cells within Δ of a bacterium
+function taste(trichoplax::Trichoplax, bacteria::Scatter, Δ::Float64)
+
+    bp = bacteria[1][]   # vector of Point2f bacteria locations
+    g2p = trichoplax.cell_location[GLANDCELL_TYPE2_INDEX]  # vector of gland cell locations
+    iTaste = Vector{Int64}(undef, 0)
+    for i in 1:length(g2p)
+        if any(distance(g2p[i], bp).<Δ)  # any bacterium within Δ of gp2[i]
+            push!(iTaste, i)             # ith gland cell tastes a bacterium
+        end
+    end
+   return iTaste
+end
+
+
+
+video_aspectratio = 16.0/12.0
+video_worldHigh = 1600
+video_screenpixels = (video_aspectratio*video_worldHigh*pxl_per_um, video_worldHigh*pxl_per_um)
+
+# for video_worldHigh
+worldHigh = video_worldHigh
+screenpixels = video_screenpixels
+worldWide = video_aspectratio*video_worldHigh
 
 # 16:9 aspect
-F = Figure(resolution = video_screenpixels)
+F = Figure(resolution = screenpixels)
 ax = Axis(F[1,1], aspect = DataAspect())
-xlims!(0, video_aspectratio*worldHigh)
+xlims!(0, worldWide)
 ylims!(0, worldHigh)
 hidedecorations!(ax)
 
 # construct world
 
-worldMap = zeros(pixelWide, pixelWide)
+#worldMap = zeros(pixelWide, pixelWide)
 
-clumpx = 1.2*worldHigh
-bacteria(clumpx, 24, 6)
+bacteria_location = Point2f(200.0+1.25*tr_diameter, 100.0+0.9*tr_diameter )
+bacteria = scatter_bacteria(bacteria_location, 24, 6)
 
 # construct and draw Trichoplax
-trichoplax  = Trichoplax(tr_diameter/2.0, Point2f(worldHigh/2.0, worldHigh/2.0))
+trichoplax_startpoint = Point2f(200.0+tr_diameter/2.0, 100.0+tr_diameter/2.0)
+trichoplax  = Trichoplax(tr_diameter/2.0, trichoplax_startpoint)
 
 PaxB_clump = get_PaxB_clumps()  
 
@@ -722,11 +747,11 @@ if showCells
     # crystal cells at PaxB clump means
     crystals(trichoplax, PaxB_clump[1])
 
-    glandcell_type2(trichoplax, 100)
+    glandcell_type2(trichoplax, 800)
 
     glandcell_type3(trichoplax, 100)
 
-    glandcell_type1(trichoplax, 100)
+    glandcell_type1(trichoplax,100)
 
     lipophil(trichoplax, 100)
 
@@ -737,10 +762,18 @@ end
 
 display(F)
 
-
-while trichoplax.location[][1]<clumpx
-    move(trichoplax, Point2f(5., 0.))
-    sleep(.01)
+VIDEO = true
+if VIDEO
+    trichoplax.v[] = Point2f(2.5,0.0)     # initial velocity
+    record(F, "trich1.mkv", 1:200) do i
+    #while trichoplax.location[][1]<clumpx
+        move(trichoplax)
+        iTaste = taste(trichoplax, bacteria, 5.0)
+        if !isempty(iTaste)
+            r = mean([trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][i] for i in iTaste])
+            trichoplax.v[] = 2.5*r/distance(r)
+        end
+    end
 end
 
 
