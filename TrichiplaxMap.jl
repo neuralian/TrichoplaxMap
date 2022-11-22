@@ -15,6 +15,7 @@ MAXCELLTYPES = 20
 MAXCELLS = 5000   # maximum number of cells of any type
 MAXBAX = 100  # max bacteria per cluster
 GLANDCELL_SIZE = 5.f0
+TASTERANGE = 12.
 # type 2 gland cells happen to be the second cell type to be created
 # WARNING: Definition of GLANDCELL_TYPE2_INDEX will have to be changed
 #          if cell type creation order changes (cos I'm too lazy to write code to make this happen)
@@ -43,6 +44,8 @@ end
 function Trichoplax(radius::Float64, location::Point2f, v0::Point2f=Point2f(0,0))
     plt_handle =  poly!(Circle(location, radius), 
                   color = RGBA(.8, .7, .7, .5), strokecolor = RGB(.6, .6, .6), strokewidth = .25)
+    empty_tastemap = Observable(Vector{Point2f}(undef,0))
+    scatter!(empty_tastemap, color = RGBA(0., 1., 0., .35), markersize = 2*TASTERANGE)
     Trichoplax( zeros(1,1), 
                 [radius], [location], plt_handle, 
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
@@ -50,7 +53,7 @@ function Trichoplax(radius::Float64, location::Point2f, v0::Point2f=Point2f(0,0)
                 [ Vector{Poly{Tuple{Vector{Point{2, Float32}}}}}(undef,MAXCELLS) for _ = 1:MAXCELLTYPES], 
                 Vector{String}(undef, MAXCELLTYPES),
                 [Vector{Point2f}(undef, MAXCELLS) for _ in 1:MAXCELLTYPES],
-                Observable(Vector{Point2f}(undef,0)),
+                empty_tastemap,
                 [v0]
             )
              #   [0], [scatter!(Point2f(NaN, NaN))], [""])
@@ -88,11 +91,7 @@ function withinanyclump(p::Point2f, C::Vector{Point2f}, S::Vector{Float64})
 end
 
 
-# function draw(trichoplax::Trichoplax)
-#     poly!(Circle(trichoplax.location[], trichoplax.radius[]), 
-#     color = :white, strokecolor = :black, strokewidth = 1)
-# end
-
+# step trichoplax forward at current velocity
 function move(trichoplax::Trichoplax)
 
     trichoplax.location[] +=  trichoplax.v[]
@@ -107,9 +106,12 @@ function move(trichoplax::Trichoplax)
     end
 end
 
-
+# move to specified point
 function moveto(trichoplax::Trichoplax, p::Point2f)
-    move(trichoplax, p-trichoplax.location[])
+    v = trichoplax.v[]
+    trichoplax.v[] =  p-trichoplax.location[]
+    move(trichoplax)
+    trichoplax.v[] = v
 end
 
 # sample of n points p::point2f from density(r) defined on (0,rmax), where r is distance of p from origin
@@ -739,7 +741,7 @@ bacteria = scatter_bacteria(bacteria_location, 24, 6)
 
 # construct and draw Trichoplax
 trichoplax_startpoint = Point2f(200.0+tr_diameter/2.0, 100.0+tr_diameter/2.0)
-trichoplax_startpoint = Point2f(200.0+tr_diameter/2.0, 100.0+tr_diameter/2.0)
+trichoplax_startpoint = Point2f(1200., 800.)
 trichoplax  = Trichoplax(tr_diameter/2.0, trichoplax_startpoint)
 
 PaxB_clump = get_PaxB_clumps()  
@@ -771,14 +773,14 @@ end
 
 
 display(F)
-Random.seed!(3141)
+Random.seed!(4141)
 VIDEO = true
 if VIDEO
     trichoplax.v[] = Point2f(2.5,0.0)     # initial velocity
-    record(F, "trich1.mkv", 1:200) do i
+    record(F, "trich1.mkv", 1:25) do i
     #while trichoplax.location[][1]<clumpx
         move(trichoplax)
-        iTaste = taste(trichoplax, bacteria, 8.0)
+        iTaste = taste(trichoplax, bacteria, TASTERANGE)
         if isempty(iTaste)
             trichoplax.taste_map[] = Vector{Point2f}(undef,0)
         else
