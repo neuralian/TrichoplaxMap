@@ -16,6 +16,8 @@ MAXCELLS = 5000   # maximum number of cells of any type
 MAXBAX = 100  # max bacteria per cluster
 GLANDCELL_SIZE = 5.f0
 TASTERANGE = 12.
+MARGIN_WIDTH = 100.  # marginal zone
+EAT_THRESHOLD = 5   # for eat decision
 # type 2 gland cells happen to be the second cell type to be created
 # WARNING: Definition of GLANDCELL_TYPE2_INDEX will have to be changed
 #          if cell type creation order changes (cos I'm too lazy to write code to make this happen)
@@ -26,8 +28,9 @@ GLANDCELL_TYPE2_INDEX = 2
 struct Trichoplax
     map::Array{Float64,2}
     radius::Vector{Float64} # nb declaring as array makes value mutable as diameter[]
-    location::Vector{Point2f}  
+    location::Observable{Point2f}
     edge_handle::Poly
+    lipozone_handle::Poly
     nLabels::Vector{Int64}
     label_handle::Vector{Scatter}  # handles of scatterplots
     label_name::Vector{String}
@@ -37,23 +40,27 @@ struct Trichoplax
     celltype_name::Vector{String}
     cell_location::Vector{Vector{Point2f}}
     taste_map::Observable{Vector{Point2f}}
+    eat_trigger::Vector{Int64}     # eat when eat_trigger > EAT_THRESHOLD
     v::Vector{Point2f}      # velocity
 end
 
 
-function Trichoplax(radius::Float64, location::Point2f, v0::Point2f=Point2f(0,0))
-    plt_handle =  poly!(Circle(location, radius), 
-                  color = RGBA(.8, .7, .7, .5), strokecolor = RGB(.6, .6, .6), strokewidth = .25)
+function Trichoplax(radius::Float64, location::Observable{Point2f}, v0::Point2f=Point2f(0,0))
+    plt_handle =  poly!(Circle(location[], radius), 
+                  color = RGBA(.8, .7, .7, .25), strokecolor = RGB(.6, .6, .6), strokewidth = .25)
+    lipozone_handle = poly!(Circle(location[], radius-MARGIN_WIDTH), 
+    color = RGBA(1.0, .75, 1.0, .2) , strokecolor = RGB(.6, .6, .6), strokewidth = .25)
     empty_tastemap = Observable(Vector{Point2f}(undef,0))
     scatter!(empty_tastemap, color = RGBA(0., 1., 0., .35), markersize = 2*TASTERANGE)
     Trichoplax( zeros(1,1), 
-                [radius], [location], plt_handle, 
+                [radius], location, plt_handle, lipozone_handle,
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
                 [0], Vector{Int64}(undef, MAXCELLTYPES),
                 [ Vector{Poly{Tuple{Vector{Point{2, Float32}}}}}(undef,MAXCELLS) for _ = 1:MAXCELLTYPES], 
                 Vector{String}(undef, MAXCELLTYPES),
                 [Vector{Point2f}(undef, MAXCELLS) for _ in 1:MAXCELLTYPES],
                 empty_tastemap,
+                [0],
                 [v0]
             )
              #   [0], [scatter!(Point2f(NaN, NaN))], [""])
@@ -95,8 +102,10 @@ end
 function move(trichoplax::Trichoplax)
 
     trichoplax.location[] +=  trichoplax.v[]
-    trichoplax.edge_handle[1] = Circle(trichoplax.location[], trichoplax.radius[])  # move outline
-    for i in 1:trichoplax.nLabels[]   # move labels
+    trichoplax.edge_handle[1] = Circle(trichoplax.location[], trichoplax.radius[]) 
+    trichoplax.lipozone_handle[1] = Circle(trichoplax.location[], trichoplax.radius[]-MARGIN_WIDTH) 
+     # move outline
+     for i in 1:trichoplax.nLabels[]   # move labels
         trichoplax.label_handle[i][1] = trichoplax.label_handle[i][1][] .+= trichoplax.v[]  
    end
    for i in 1:trichoplax.nCelltypes[]   # move cells
@@ -242,7 +251,7 @@ function cells(trichoplax::Trichoplax,
 
     for j in 1:length(position)
         trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
-            poly!(trichoplax.location.+position[j].+rotate(size*shape, orientation[j]),
+            poly!([trichoplax.location[]].+position[j].+rotate(size*shape, orientation[j]),
             color = color, strokecolor = edgecolor, strokewidth = edgewidth, overdraw = true)
     end
 end
@@ -546,7 +555,7 @@ function ampullae(trichoplax::Trichoplax, n::Int64)
 
        # @infiltrate
     trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
-        poly!(trichoplax.location.+location[j].+rotate(shape, -atan(location[j]...)),
+        poly!([trichoplax.location[]].+location[j].+rotate(shape, -atan(location[j]...)),
         color = ampl_colour, strokecolor = outline_colour, strokewidth = outline_width)
     end
 
@@ -576,7 +585,7 @@ function glandcell_type2(trichoplax::Trichoplax, n::Int64)
 
     for j in 1:length(location)
         trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
-        poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
+        poly!([trichoplax.location[]].+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
         color = gland2_colour, strokecolor = outline_colour, strokewidth = outline_width)
     end
 
@@ -604,7 +613,7 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
 
      for j in 1:length(location)
          trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
-         poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
+         poly!([trichoplax.location[]].+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
          color = gland3_colour, strokecolor = outline_colour, strokewidth = outline_width)
      end
  
@@ -633,7 +642,7 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
 
      for j in 1:length(location)
          trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
-         poly!(trichoplax.location.+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
+         poly!([trichoplax.location[]].+location[j].+rotate(GLANDCELL_SIZE*shape, rand()[]*2π),
          color = gland1_colour, strokecolor = outline_colour, strokewidth = outline_width)
      end
  
@@ -647,7 +656,6 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
      outline_colour = RGBA(0., 0., 1., 1.0)
      outline_width = 0.25
      spacing = 10.0
-     tr_margin_width = 100.
      cell_radius = 1.0
      chamfer = 0.4
  
@@ -658,7 +666,7 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
               Point2f(-cell_radius, -cell_radius+chamfer), Point2f(-cell_radius+chamfer, -cell_radius)]
      # nb because area element increases linearly with distance from center, 
      # quadratic radial density gives linear increase in spatial density 
-     location = radialcellsample(n,  x-> x < (trichoplax.radius[]-tr_margin_width) ? 1.0 : 0.0 , 
+     location = radialcellsample(n,  x-> x < (trichoplax.radius[]-MARGIN_WIDTH) ? 1.0 : 0.0 , 
                 trichoplax.radius[], spacing, trichoplax)
 
      trichoplax.nCelltypes[] += 1
@@ -668,7 +676,7 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
  
      for j in 1:length(location)
          trichoplax.cell_handle[trichoplax.nCelltypes[]][j] = 
-         poly!(trichoplax.location.+location[j].+rotate(lipo_size*shape, rand()[]*2π),
+         poly!([trichoplax.location[]].+location[j].+rotate(lipo_size*shape, rand()[]*2π),
          color = lipo_colour, strokecolor = outline_colour, strokewidth = outline_width)
      end
  
@@ -697,7 +705,7 @@ function scatter_bacteria(location::Point2f, nClumps::Int64, nPerClump::Int64)
 function taste(trichoplax::Trichoplax, bacteria::Scatter, Δ::Float64)
 
     bp = bacteria[1][]   # vector of Point2f bacteria locations
-    g2p = trichoplax.location .+ trichoplax.cell_location[GLANDCELL_TYPE2_INDEX]  # vector of gland cell locations
+    g2p = [trichoplax.location[]] .+ trichoplax.cell_location[GLANDCELL_TYPE2_INDEX]  # vector of gland cell locations
     iTaste = Vector{Int64}(undef, 0)
     for i in 1:length(g2p)
         if any(distance(g2p[i], bp).<Δ)  # any bacterium within Δ of gp2[i]
@@ -713,6 +721,38 @@ function init_maps(trichoplax::Trichoplax)
     scatter!(trichoplax.taste_map, color = RGBA(0., 1., 0., 0.25), markersize = 25.)
 
 end
+
+
+# proportion of bacteria tasted in lipohil zone to bacteria there and 
+# in the marginal zone in movement direction 
+function ingested(trichoplax::Trichoplax, iTaste::Vector{Int64})
+
+   if isempty(iTaste)
+    println("ERROR in ingested(): No bacteria tasted")
+    return -1
+   end
+
+    PT = [trichoplax.cell_location[2][i] for i in iTaste]  # tasting cells
+
+    nIngested = sum(distance.(PT).<(trichoplax.radius[]-MARGIN_WIDTH)) # count bacteria in lipophil zone
+
+    nIncoming = 0
+    d = distance(trichoplax.v[])
+    a = cos(π/4.0)
+    for i in 1:length(iTaste)
+         # v.p/|v||p| = cosine of angle between tasting cell and movement direction
+        if  sum(trichoplax.v[].*PT[i])/(d*distance(PT[i]))>a  && 
+                 distance(PT[i])>(trichoplax.radius[]-MARGIN_WIDTH)
+            nIncoming += 1
+        end
+    end
+
+    return nIncoming/(nIngested+nIncoming)
+end
+
+
+
+
 
 
 
@@ -741,7 +781,7 @@ bacteria = scatter_bacteria(bacteria_location, 24, 6)
 
 # construct and draw Trichoplax
 trichoplax_startpoint = Point2f(200.0+tr_diameter/2.0, 100.0+tr_diameter/2.0)
-trichoplax_startpoint = Point2f(1200., 800.)
+trichoplax_startpoint = Observable(Point2f(800., 800.))
 trichoplax  = Trichoplax(tr_diameter/2.0, trichoplax_startpoint)
 
 PaxB_clump = get_PaxB_clumps()  
@@ -777,17 +817,33 @@ Random.seed!(4141)
 VIDEO = true
 if VIDEO
     trichoplax.v[] = Point2f(2.5,0.0)     # initial velocity
-    record(F, "trich1.mkv", 1:25) do i
+    record(F, "trich1.mkv", 1:200) do i
     #while trichoplax.location[][1]<clumpx
         move(trichoplax)
         iTaste = taste(trichoplax, bacteria, TASTERANGE)
+
         if isempty(iTaste)
             trichoplax.taste_map[] = Vector{Point2f}(undef,0)
         else
+            # set velocity towards mean of tasted bacteria
             r = mean([trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]) 
             trichoplax.v[] = 0.95*trichoplax.v[] +  0.05*2.5*r/trichoplax.radius[] 
-            trichoplax.taste_map[] = trichoplax.location.+
+
+            # display signal release from type 2 cells that taste bacteria
+            trichoplax.taste_map[] = [trichoplax.location[]].+
                 [trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]
+
+            # activate lipophil cells if the number of tasting cells in lipophil zone
+            # is sufficiently greater than number in leading edge of marginal zone
+            # ie there is a diminishing return for continuing to move vs stopping to eat
+            if ingested(trichoplax, iTaste) < 0.25
+                # for each tasing cell in lipophil zone
+                # activate nearby lipophil cells
+                trichoplax.eat_trigger[] += 1
+                if trichoplax.eat_trigger[]>EAT_THRESHOLD
+                   println("EAT!")
+                end
+            end
         end
         trichoplax.v[] = trichoplax.v[] + Point2f(rand(Normal(0.0, 0.1),2))
     end
