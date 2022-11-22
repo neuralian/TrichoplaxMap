@@ -693,7 +693,7 @@ function scatter_bacteria(location::Point2f, nClumps::Int64, nPerClump::Int64)
 function taste(trichoplax::Trichoplax, bacteria::Scatter, Δ::Float64)
 
     bp = bacteria[1][]   # vector of Point2f bacteria locations
-    g2p = trichoplax.cell_location[GLANDCELL_TYPE2_INDEX]  # vector of gland cell locations
+    g2p = trichoplax.location .+ trichoplax.cell_location[GLANDCELL_TYPE2_INDEX]  # vector of gland cell locations
     iTaste = Vector{Int64}(undef, 0)
     for i in 1:length(g2p)
         if any(distance(g2p[i], bp).<Δ)  # any bacterium within Δ of gp2[i]
@@ -765,14 +765,15 @@ display(F)
 VIDEO = true
 if VIDEO
     trichoplax.v[] = Point2f(2.5,0.0)     # initial velocity
-    record(F, "trich1.mkv", 1:200) do i
+    record(F, "trich1.mkv", 1:800) do i
     #while trichoplax.location[][1]<clumpx
         move(trichoplax)
-        iTaste = taste(trichoplax, bacteria, 5.0)
+        iTaste = taste(trichoplax, bacteria, 8.0)
         if !isempty(iTaste)
-            r = mean([trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][i] for i in iTaste])
-            trichoplax.v[] = 2.5*r/distance(r)
+            r = mean([trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]) 
+            trichoplax.v[] = 0.95*trichoplax.v[] +  0.05*2.5*r/trichoplax.radius[] 
         end
+        trichoplax.v[] = 0.95*trichoplax.v[] + Point2f(rand(Normal(0.0, 0.025),2))
     end
 end
 
