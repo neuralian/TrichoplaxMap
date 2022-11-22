@@ -35,6 +35,7 @@ struct Trichoplax
     cell_handle::Vector{Vector{Poly}}  # cell_handle[i][j] is handle of jth cell of type i 
     celltype_name::Vector{String}
     cell_location::Vector{Vector{Point2f}}
+    taste_map::Observable{Vector{Point2f}}
     v::Vector{Point2f}      # velocity
 end
 
@@ -49,6 +50,7 @@ function Trichoplax(radius::Float64, location::Point2f, v0::Point2f=Point2f(0,0)
                 [ Vector{Poly{Tuple{Vector{Point{2, Float32}}}}}(undef,MAXCELLS) for _ = 1:MAXCELLTYPES], 
                 Vector{String}(undef, MAXCELLTYPES),
                 [Vector{Point2f}(undef, MAXCELLS) for _ in 1:MAXCELLTYPES],
+                Observable(Vector{Point2f}(undef,0)),
                 [v0]
             )
              #   [0], [scatter!(Point2f(NaN, NaN))], [""])
@@ -704,6 +706,13 @@ function taste(trichoplax::Trichoplax, bacteria::Scatter, Δ::Float64)
 end
 
 
+function init_maps(trichoplax::Trichoplax)
+
+    scatter!(trichoplax.taste_map, color = RGBA(0., 1., 0., 0.25), markersize = 25.)
+
+end
+
+
 
 video_aspectratio = 16.0/12.0
 video_worldHigh = 1600
@@ -729,6 +738,7 @@ bacteria_location = Point2f(200.0+1.25*tr_diameter, 100.0+0.9*tr_diameter )
 bacteria = scatter_bacteria(bacteria_location, 24, 6)
 
 # construct and draw Trichoplax
+trichoplax_startpoint = Point2f(200.0+tr_diameter/2.0, 100.0+tr_diameter/2.0)
 trichoplax_startpoint = Point2f(200.0+tr_diameter/2.0, 100.0+tr_diameter/2.0)
 trichoplax  = Trichoplax(tr_diameter/2.0, trichoplax_startpoint)
 
@@ -761,19 +771,23 @@ end
 
 
 display(F)
-
+Random.seed!(3141)
 VIDEO = true
 if VIDEO
     trichoplax.v[] = Point2f(2.5,0.0)     # initial velocity
-    record(F, "trich1.mkv", 1:800) do i
+    record(F, "trich1.mkv", 1:200) do i
     #while trichoplax.location[][1]<clumpx
         move(trichoplax)
         iTaste = taste(trichoplax, bacteria, 8.0)
-        if !isempty(iTaste)
+        if isempty(iTaste)
+            trichoplax.taste_map[] = Vector{Point2f}(undef,0)
+        else
             r = mean([trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]) 
             trichoplax.v[] = 0.95*trichoplax.v[] +  0.05*2.5*r/trichoplax.radius[] 
+            trichoplax.taste_map[] = trichoplax.location.+
+                [trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]
         end
-        trichoplax.v[] = 0.95*trichoplax.v[] + Point2f(rand(Normal(0.0, 0.025),2))
+        trichoplax.v[] = trichoplax.v[] + Point2f(rand(Normal(0.0, 0.1),2))
     end
 end
 
