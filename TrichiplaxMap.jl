@@ -16,12 +16,14 @@ MAXCELLS = 5000   # maximum number of cells of any type
 MAXBAX = 100  # max bacteria per cluster
 GLANDCELL_SIZE = 5.f0
 TASTERANGE = 12.
+EATRANGE = 15.
 MARGIN_WIDTH = 100.  # marginal zone
 EAT_THRESHOLD = 5   # for eat decision
 # type 2 gland cells happen to be the second cell type to be created
 # WARNING: Definition of GLANDCELL_TYPE2_INDEX will have to be changed
 #          if cell type creation order changes (cos I'm too lazy to write code to make this happen)
 GLANDCELL_TYPE2_INDEX = 2   
+LIPOPHIL_INDEX = 5  # ditto
 
 
 # Trichoplax Utilities
@@ -40,6 +42,7 @@ struct Trichoplax
     celltype_name::Vector{String}
     cell_location::Vector{Vector{Point2f}}
     taste_map::Observable{Vector{Point2f}}
+    eat_map::Observable{Vector{Point2f}}
     eat_trigger::Vector{Int64}     # eat when eat_trigger > EAT_THRESHOLD
     v::Vector{Point2f}      # velocity
 end
@@ -51,7 +54,9 @@ function Trichoplax(radius::Float64, location::Observable{Point2f}, v0::Point2f=
     lipozone_handle = poly!(Circle(location[], radius-MARGIN_WIDTH), 
     color = RGBA(1.0, .75, 1.0, .2) , strokecolor = RGB(.6, .6, .6), strokewidth = .25)
     empty_tastemap = Observable(Vector{Point2f}(undef,0))
+    empty_eatmap = Observable(Vector{Point2f}(undef,0))
     scatter!(empty_tastemap, color = RGBA(0., 1., 0., .35), markersize = 2*TASTERANGE)
+    scatter!(empty_eatmap, color = RGBA(1.0, .5, .85, .5), markersize = 2*EATRANGE)
     Trichoplax( zeros(1,1), 
                 [radius], location, plt_handle, lipozone_handle,
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
@@ -60,11 +65,47 @@ function Trichoplax(radius::Float64, location::Observable{Point2f}, v0::Point2f=
                 Vector{String}(undef, MAXCELLTYPES),
                 [Vector{Point2f}(undef, MAXCELLS) for _ in 1:MAXCELLTYPES],
                 empty_tastemap,
+                empty_eatmap,
                 [0],
                 [v0]
             )
              #   [0], [scatter!(Point2f(NaN, NaN))], [""])
 end
+
+
+struct Bacteria
+    here::Scatter
+    lives::Vector{Vector{Int64}}
+end
+
+function scatter_bacteria(location::Point2f, nClumps::Int64, nPerClump::Int64)
+    # clump means Gaussian scattered around location (x,y)
+    # Poisson count per clump, each Gaussian scattered around its mean location
+
+    betweenSD = 100.0
+    withinSD = 12.0
+    clump = [location .+ Point2f(rand(Normal(0.0, betweenSD), 2)) for _ in 1:nClumps]
+    clumpSize = rand(Poisson(nPerClump), nClumps)
+
+    p = Vector{Point2f}(undef, 0)   # empty vector
+    for i in 1:nClumps
+        for j in 1:clumpSize[i]
+            push!(p, clump[i] + Point2f(rand(Normal(0.0, withinSD), 2) ) )
+        end
+    end
+    scatter!(p, markersize = 8.0, color = :red)
+ end
+
+
+
+function Bacteria(location::Point2f, nClumps::Int64, nPerClump::Int64, lives::Int64)
+    
+    # each bacterium dies if it is exposed to gastric juice for more than lives timesteps
+    bacteria = scatter_bacteria(location, nClumps, nPerClump)
+    Bacteria(bacteria, [lives*ones(length(bacteria[1][]))] )
+
+end
+
 
 # distance utilities, for placing cells and labels
 distance(p::Point2f) = sqrt(p[1]^2 + p[2]^2)
@@ -575,7 +616,7 @@ function glandcell_type2(trichoplax::Trichoplax, n::Int64)
     shape = [Point2f(cos(Θ), sin(Θ)) for Θ in (1:6)*2π/6]
     # nb because area element increases linearly with distance from center, 
     # quadratic radial density gives linear increase in spatial density 
-    density = x-> x < (trichoplax.radius[]-spacing) ? (x/trichoplax.radius[])^2 : 0.0
+    density = x-> x < (trichoplax.radius[]-spacing) ? (x/trichoplax.radius[])^-1.0 : 0.0
     location = radialcellsample(n, density , trichoplax.radius[], spacing, trichoplax)
 
     trichoplax.nCelltypes[] += 1
@@ -637,7 +678,7 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
 
      trichoplax.nCelltypes[] += 1
      trichoplax.nCells[trichoplax.nCelltypes[]] = length(location)
-     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
+     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T1"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
 
      for j in 1:length(location)
@@ -671,7 +712,7 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
 
      trichoplax.nCelltypes[] += 1
      trichoplax.nCells[trichoplax.nCelltypes[]] = length(location)
-     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Gland_T3"   
+     trichoplax.celltype_name[trichoplax.nCelltypes[]] = "Lipophil"   
      trichoplax.cell_location[trichoplax.nCelltypes[]] = location
  
      for j in 1:length(location)
@@ -682,29 +723,12 @@ function glandcell_type3(trichoplax::Trichoplax, n::Int64)
  
  end
 
-function scatter_bacteria(location::Point2f, nClumps::Int64, nPerClump::Int64)
-    # clump means Gaussian scattered around location (x,y)
-    # Poisson count per clump, each Gaussian scattered around its mean location
-
-    betweenSD = 100.0
-    withinSD = 12.0
-    clump = [location .+ Point2f(rand(Normal(0.0, betweenSD), 2)) for _ in 1:nClumps]
-    clumpSize = rand(Poisson(nPerClump), nClumps)
-
-    p = Vector{Point2f}(undef, 0)   # empty vector
-    for i in 1:nClumps
-        for j in 1:clumpSize[i]
-            push!(p, clump[i] + Point2f(rand(Normal(0.0, withinSD), 2) ) )
-        end
-    end
-    scatter!(p, markersize = 5.0, color = :red)
- end
 
 
 # indices of type 2 gland cells within Δ of a bacterium
-function taste(trichoplax::Trichoplax, bacteria::Scatter, Δ::Float64)
+function taste(trichoplax::Trichoplax, bacteria::Bacteria, Δ::Float64)
 
-    bp = bacteria[1][]   # vector of Point2f bacteria locations
+    bp = bacteria.here[1][]   # vector of Point2f bacteria locations
     g2p = [trichoplax.location[]] .+ trichoplax.cell_location[GLANDCELL_TYPE2_INDEX]  # vector of gland cell locations
     iTaste = Vector{Int64}(undef, 0)
     for i in 1:length(g2p)
@@ -715,12 +739,44 @@ function taste(trichoplax::Trichoplax, bacteria::Scatter, Δ::Float64)
    return iTaste
 end
 
+# indices of type 2 gland cells within Δ of a bacterium
+function activateLipophil(trichoplax::Trichoplax, iTaste::Vector{Int64}, Δ::Float64)
 
-function init_maps(trichoplax::Trichoplax)
-
-    scatter!(trichoplax.taste_map, color = RGBA(0., 1., 0., 0.25), markersize = 25.)
-
+    taster_location = [ ([trichoplax.location[]] .+ 
+            trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][i])[] for i in iTaste] 
+    lipo_location = [trichoplax.location[]] .+ trichoplax.cell_location[LIPOPHIL_INDEX]  # vector of gland cell locations
+    iSalivate = Vector{Int64}(undef, 0)
+    for i in 1:length(lipo_location)
+        if any(distance(lipo_location[i], taster_location).<Δ)  # any bacterium within Δ of gp2[i]
+            push!(iSalivate, i)             # ith gland cell tastes a bacterium
+        end
+    end
+   return iSalivate
 end
+
+# indices of bacteria exposed to gastric juice 
+function targetBacteria(trichoplax::Trichoplax, bacteria::Bacteria, iSalivate::Vector{Int64}, Δ::Float64)
+
+    digester_location = [ ([trichoplax.location[]] .+ 
+    trichoplax.cell_location[LIPOPHIL_INDEX][i])[] for i in iSalivate]
+    for i in 1:length(bacteria.lives[]) 
+        if any(distance(bacteria.here[1][][i], digester_location).<Δ)
+            bacteria.lives[][i] -= 1
+        end
+    end
+end
+
+
+
+
+
+
+# function init_maps(trichoplax::Trichoplax)
+
+#     scatter!(trichoplax.taste_map, color = RGBA(0., 1., 0., 0.25), markersize = 25.)
+#     scatter!(trichoplax.eat_map, color = RGBA(1.0, .75, 1.0, .25) , markersize = 25.)
+
+# end
 
 
 # proportion of bacteria tasted in lipohil zone to bacteria there and 
@@ -751,11 +807,6 @@ function ingested(trichoplax::Trichoplax, iTaste::Vector{Int64})
 end
 
 
-
-
-
-
-
 video_aspectratio = 16.0/12.0
 video_worldHigh = 1600
 video_screenpixels = (video_aspectratio*video_worldHigh*pxl_per_um, video_worldHigh*pxl_per_um)
@@ -777,11 +828,11 @@ hidedecorations!(ax)
 #worldMap = zeros(pixelWide, pixelWide)
 
 bacteria_location = Point2f(200.0+1.25*tr_diameter, 100.0+0.9*tr_diameter )
-bacteria = scatter_bacteria(bacteria_location, 24, 6)
+bacteria = Bacteria(bacteria_location, 24, 6, 9)
 
 # construct and draw Trichoplax
-trichoplax_startpoint = Point2f(200.0+tr_diameter/2.0, 100.0+tr_diameter/2.0)
-trichoplax_startpoint = Observable(Point2f(800., 800.))
+trichoplax_startpoint = Observable(Point2f(200.0+tr_diameter/2.0, 100.0+tr_diameter/2.0))
+#trichoplax_startpoint = Observable(Point2f(1200., 900.))
 trichoplax  = Trichoplax(tr_diameter/2.0, trichoplax_startpoint)
 
 PaxB_clump = get_PaxB_clumps()  
@@ -799,13 +850,13 @@ if showCells
     # crystal cells at PaxB clump means
     crystals(trichoplax, PaxB_clump[1])
 
-    glandcell_type2(trichoplax, 800)
+    glandcell_type2(trichoplax, 1200)
 
     glandcell_type3(trichoplax, 100)
 
     glandcell_type1(trichoplax,100)
 
-    lipophil(trichoplax, 100)
+    lipophil(trichoplax, 400)
 
     ampullae(trichoplax, 128)
 end
@@ -817,13 +868,14 @@ Random.seed!(4141)
 VIDEO = true
 if VIDEO
     trichoplax.v[] = Point2f(2.5,0.0)     # initial velocity
-    record(F, "trich1.mkv", 1:200) do i
+    record(F, "trich1.mkv", 1:400) do i
     #while trichoplax.location[][1]<clumpx
         move(trichoplax)
         iTaste = taste(trichoplax, bacteria, TASTERANGE)
 
         if isempty(iTaste)
             trichoplax.taste_map[] = Vector{Point2f}(undef,0)
+            trichoplax.eat_map[] =  Vector{Point2f}(undef,0)
         else
             # set velocity towards mean of tasted bacteria
             r = mean([trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]) 
@@ -841,11 +893,28 @@ if VIDEO
                 # activate nearby lipophil cells
                 trichoplax.eat_trigger[] += 1
                 if trichoplax.eat_trigger[]>EAT_THRESHOLD
-                   println("EAT!")
+                   iSalivate = activateLipophil(trichoplax, iTaste, 25.)
+                   if isempty(iSalivate)
+                    trichoplax.eat_map[] = Vector{Point2f}(undef, 0)
+                   else
+                    # display gastric juice release from activated lipophil cells
+                    trichoplax.eat_map[] = [trichoplax.location[]].+
+                    [trichoplax.cell_location[LIPOPHIL_INDEX][j] for j in iSalivate]    
+
+                    # take a life from each bacterium in range of active lipophil cell
+                    targetBacteria(trichoplax, bacteria, iSalivate, EATRANGE)
+
+                    # kill bacteria with less than 1 life
+                    keep = findall(bacteria.lives[].>0)
+                    bacteria.here[1][] = [bacteria.here[1][][j] for j in keep]
+                    bacteria.lives[] = [bacteria.lives[][j] for j in keep]
+
+                    # trichoplax.v[] *=0.95
+                   end               
                 end
             end
         end
-        trichoplax.v[] = trichoplax.v[] + Point2f(rand(Normal(0.0, 0.1),2))
+        trichoplax.v[] = trichoplax.v[] + Point2f(rand(Normal(0.0, 0.25),2))
     end
 end
 
