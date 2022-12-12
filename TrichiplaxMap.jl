@@ -1,13 +1,30 @@
-using GLMakie
+VIDEO = false            # record video
+
+if VIDEO
+    using GLMakie
+else
+    using CairoMakie
+end
 using Colors
 using Random, Distributions
 using Infiltrator
+
+
+
+VideoName = "TrichoplaxMap1.mp4"      
+# if VIDEO==false then PNGs of specified frames are rendered  
+ImageFrame = vcat([1], Vector(50:10:400))
+ImageNameStem = "TrichoplaxMap1"
+showTFs = false          # include transcription factors in anatomy view
+showCells = true        # display cells in anatomy view
+
+
 
 Random.seed!(121213)
 
 # global parameters
 
-pxl_per_um = 0.5      # pixels per micron display
+
 tr_diameter = 1000.0  # um
 worldHigh = 1200.0 # microns
 MAXLABELS = 20
@@ -55,8 +72,8 @@ function Trichoplax(radius::Float64, location::Observable{Point2f}, v0::Point2f=
     color = RGBA(1.0, .75, 1.0, .2) , strokecolor = RGB(.6, .6, .6), strokewidth = .25)
     empty_tastemap = Observable(Vector{Point2f}(undef,0))
     empty_eatmap = Observable(Vector{Point2f}(undef,0))
-    scatter!(empty_tastemap, color = RGBA(0., 1., 0., .35), markersize = 2*TASTERANGE)
-    scatter!(empty_eatmap, color = RGBA(1.0, .5, .85, .5), markersize = 2*EATRANGE)
+    scatter!(empty_tastemap, color = RGBA(0., 1., 0., .35), markersize = 4.0*pxl_per_um*TASTERANGE)
+    scatter!(empty_eatmap, color = RGBA(1.0, .5, .85, .5), markersize =  4.0*pxl_per_um*EATRANGE)
     Trichoplax( zeros(1,1), 
                 [radius], location, plt_handle, lipozone_handle,
                 [0], Vector{Scatter}(undef,MAXLABELS), Vector{String}(undef,MAXLABELS),
@@ -93,7 +110,7 @@ function scatter_bacteria(location::Point2f, nClumps::Int64, nPerClump::Int64)
             push!(p, clump[i] + Point2f(rand(Normal(0.0, withinSD), 2) ) )
         end
     end
-    scatter!(p, markersize = 8.0, color = :red)
+    scatter!(p, markersize = 16.0*pxl_per_um, color = :red)
  end
 
 
@@ -274,7 +291,7 @@ function label(trichoplax::Trichoplax, P::Vector{Point2f}, labelName::String,
 
     trichoplax.nLabels[] += 1
     trichoplax.label_handle[trichoplax.nLabels[]] = 
-        scatter!(ax,trichoplax.location.+P, markersize = size, color = color)
+        scatter!(ax,[trichoplax.location[]].+P, markersize = size, color = color)
     trichoplax.label_name[trichoplax.nLabels[]] = labelName
 end
 
@@ -445,7 +462,7 @@ function Trox2()
      # Mnx pancreatic insulin cells and motorneurons
      # Monteiro &c also found TrHmx but did not identify spatial distribution
      # Hmx labels sensory placodes in vertebrates
-    Trox2density = x-> bumpdensity(x, 1.0, 425.0, 500.0)
+    Trox2density = x-> bumpdensity(x, 1.0, 400.0, 500.0)
     minSeparation = 0.1  # minimum separation between points um
     nTrox2_Particles = 18000 # number of label points
     Trox2_particle_location = radialsample(nTrox2_Particles, 
@@ -807,14 +824,19 @@ function ingested(trichoplax::Trichoplax, iTaste::Vector{Int64})
 end
 
 
-video_aspectratio = 16.0/12.0
-video_worldHigh = 1600
-video_screenpixels = (video_aspectratio*video_worldHigh*pxl_per_um, video_worldHigh*pxl_per_um)
+if VIDEO
+    pxl_per_um = 0.5      # pixels per micron display
+else
+    pxl_per_um = 2.0
+end
 
-# for video_worldHigh
-worldHigh = video_worldHigh
-screenpixels = video_screenpixels
-worldWide = video_aspectratio*video_worldHigh
+aspectratio = 16.0/12.0
+worldHigh = 1600
+
+worldWide = aspectratio*worldHigh
+screenpixels = (worldWide*pxl_per_um, worldHigh*pxl_per_um)
+
+
 
 # 16:9 aspect
 F = Figure(resolution = screenpixels)
@@ -823,29 +845,28 @@ xlims!(0, worldWide)
 ylims!(0, worldHigh)
 hidedecorations!(ax)
 
-# construct world
-
-#worldMap = zeros(pixelWide, pixelWide)
-
 bacteria_location = Point2f(200.0+1.25*tr_diameter, 100.0+0.9*tr_diameter )
-bacteria = Bacteria(bacteria_location, 24, 6, 9)
+
 
 # construct and draw Trichoplax
 trichoplax_startpoint = Observable(Point2f(200.0+tr_diameter/2.0, 100.0+tr_diameter/2.0))
-#trichoplax_startpoint = Observable(Point2f(1200., 900.))
+bacteria = Bacteria(bacteria_location, 24, 6, 9)
+    #trichoplax_startpoint = Observable(Point2f(1200., 900.))
 trichoplax  = Trichoplax(tr_diameter/2.0, trichoplax_startpoint)
+
 
 PaxB_clump = get_PaxB_clumps()  
 
-showTFs = false
+
 if showTFs
+    trichoplax.lipozone_handle[1] = Circle(trichoplax.location[], 1.) 
     PaxB(PaxB_clump)
     Trox2()
     chordinLike()
     bmp()
 end
 
-showCells = true
+
 if showCells
     # crystal cells at PaxB clump means
     crystals(trichoplax, PaxB_clump[1])
@@ -862,59 +883,74 @@ if showCells
 end
 
 
+function nextFrame(trichoplax::Trichoplax)
+
+    move(trichoplax)
+    iTaste = taste(trichoplax, bacteria, TASTERANGE)
+
+    if isempty(iTaste)
+        trichoplax.taste_map[] = Vector{Point2f}(undef,0)
+        trichoplax.eat_map[] =  Vector{Point2f}(undef,0)
+    else
+        # set velocity towards mean of tasted bacteria
+        r = mean([trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]) 
+        trichoplax.v[] = 0.95*trichoplax.v[] +  0.05*2.5*r/trichoplax.radius[] 
+
+        # display signal release from type 2 cells that taste bacteria
+        trichoplax.taste_map[] = [trichoplax.location[]].+
+            [trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]
+
+        # activate lipophil cells if the number of tasting cells in lipophil zone
+        # is sufficiently greater than number in leading edge of marginal zone
+        # ie there is a diminishing return for continuing to move vs stopping to eat
+        if ingested(trichoplax, iTaste) < 0.25
+            # for each tasing cell in lipophil zone
+            # activate nearby lipophil cells
+            trichoplax.eat_trigger[] += 1
+            if trichoplax.eat_trigger[]>EAT_THRESHOLD
+               iSalivate = activateLipophil(trichoplax, iTaste, 25.)
+               if isempty(iSalivate)
+                trichoplax.eat_map[] = Vector{Point2f}(undef, 0)
+               else
+                # display gastric juice release from activated lipophil cells
+                trichoplax.eat_map[] = [trichoplax.location[]].+
+                [trichoplax.cell_location[LIPOPHIL_INDEX][j] for j in iSalivate]    
+
+                # take a life from each bacterium in range of active lipophil cell
+                targetBacteria(trichoplax, bacteria, iSalivate, EATRANGE)
+
+                # kill bacteria with less than 1 life
+                keep = findall(bacteria.lives[].>0)
+                bacteria.here[1][] = [bacteria.here[1][][j] for j in keep]
+                bacteria.lives[] = [bacteria.lives[][j] for j in keep]
+
+                # trichoplax.v[] *=0.95
+               end               
+            end
+        end
+    end
+    trichoplax.v[] = trichoplax.v[] + Point2f(rand(Normal(0.0, 0.25),2))
+end
+
+
+
 
 display(F)
 Random.seed!(4141)
-VIDEO = true
+trichoplax.v[] = Point2f(2.5,0.0)     # initial velocity
+
 if VIDEO
-    trichoplax.v[] = Point2f(2.5,0.0)     # initial velocity
-    record(F, "trich1.mkv", 1:400) do i
+    record(F, VideoName, 1:400) do i
     #while trichoplax.location[][1]<clumpx
-        move(trichoplax)
-        iTaste = taste(trichoplax, bacteria, TASTERANGE)
-
-        if isempty(iTaste)
-            trichoplax.taste_map[] = Vector{Point2f}(undef,0)
-            trichoplax.eat_map[] =  Vector{Point2f}(undef,0)
-        else
-            # set velocity towards mean of tasted bacteria
-            r = mean([trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]) 
-            trichoplax.v[] = 0.95*trichoplax.v[] +  0.05*2.5*r/trichoplax.radius[] 
-
-            # display signal release from type 2 cells that taste bacteria
-            trichoplax.taste_map[] = [trichoplax.location[]].+
-                [trichoplax.cell_location[GLANDCELL_TYPE2_INDEX][j] for j in iTaste]
-
-            # activate lipophil cells if the number of tasting cells in lipophil zone
-            # is sufficiently greater than number in leading edge of marginal zone
-            # ie there is a diminishing return for continuing to move vs stopping to eat
-            if ingested(trichoplax, iTaste) < 0.25
-                # for each tasing cell in lipophil zone
-                # activate nearby lipophil cells
-                trichoplax.eat_trigger[] += 1
-                if trichoplax.eat_trigger[]>EAT_THRESHOLD
-                   iSalivate = activateLipophil(trichoplax, iTaste, 25.)
-                   if isempty(iSalivate)
-                    trichoplax.eat_map[] = Vector{Point2f}(undef, 0)
-                   else
-                    # display gastric juice release from activated lipophil cells
-                    trichoplax.eat_map[] = [trichoplax.location[]].+
-                    [trichoplax.cell_location[LIPOPHIL_INDEX][j] for j in iSalivate]    
-
-                    # take a life from each bacterium in range of active lipophil cell
-                    targetBacteria(trichoplax, bacteria, iSalivate, EATRANGE)
-
-                    # kill bacteria with less than 1 life
-                    keep = findall(bacteria.lives[].>0)
-                    bacteria.here[1][] = [bacteria.here[1][][j] for j in keep]
-                    bacteria.lives[] = [bacteria.lives[][j] for j in keep]
-
-                    # trichoplax.v[] *=0.95
-                   end               
-                end
-            end
+        nextFrame(trichoplax)
+    end
+else
+    for i in 1:400
+        nextFrame(trichoplax)
+       # trichoplax.location[] = trichoplax.location[]
+        if any(ImageFrame.==i)
+            CairoMakie.save(ImageNameStem*"."*string(i)*".png", F)
         end
-        trichoplax.v[] = trichoplax.v[] + Point2f(rand(Normal(0.0, 0.25),2))
     end
 end
 
